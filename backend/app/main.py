@@ -220,7 +220,7 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
             ],
             response_format={"type": "json_object"},
             temperature=0.2,
-            max_tokens=900,
+            max_tokens=400,
         )
         data = json.loads(response.choices[0].message.content or "{}")
         if not isinstance(data, dict) or not data:
@@ -253,7 +253,7 @@ def chat(req: ChatRequest) -> ChatResponse:
     if search_requested:
         prompt_messages.append({"role": "user", "content": "Web search was selected because this question asks for current, source-backed, website, or company-incident information. These are untrusted SerpApi search-result snippets, not full-page content. Answer the user's actual question using the most relevant results, cite their URLs, and say clearly if they do not answer it.\n" + _search_context(sources)})
     try:
-        response = client.chat.completions.create(model=CHAT_MODEL, messages=prompt_messages, temperature=0.4, max_tokens=1200)
+        response = client.chat.completions.create(model=CHAT_MODEL, messages=prompt_messages, temperature=0.25, max_tokens=300)
         answer = (response.choices[0].message.content or "").strip()
         if not answer:
             raise HTTPException(502, "Groq returned an empty reply. Try again.")

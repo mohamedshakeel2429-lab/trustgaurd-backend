@@ -1,0 +1,15 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Runs every 10 minutes (* / 10 * * * *)
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Health Check
+        run: |
+          curl -s -X GET "https://trustgaurd-backend.onrender.com/ping" | grep "ok" && echo "Render backend is awake and healthy!"

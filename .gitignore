@@ -1,0 +1,10 @@
+.gradle/
+.gradle-home/
+.idea/workspace.xml
+local.properties
+**/build/
+backend/.env
+backend/.venv/
+backend/.vendor/
+backend/.tmp/
+backend/**/__pycache__/

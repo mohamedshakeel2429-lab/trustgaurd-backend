@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "653448662001",
+    "project_id": "it-expo",
+    "storage_bucket": "it-expo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:653448662001:android:2274dbf02c579ac8d29250",
+        "android_client_info": {
+          "package_name": "ai.scamchain.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAByXo0fIZoQY_q8jLwcqQ7KqTuwZKe1Cw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:653448662001:android:2274dbf02c579ac8d29250",
+        "android_client_info": {
+          "package_name": "com.scamchain.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAByXo0fIZoQY_q8jLwcqQ7KqTuwZKe1Cw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -15,7 +15,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import ai.scamchain.mobile.capture.ScreenCaptureService
 import ai.scamchain.mobile.overlay.OverlayService
 import ai.scamchain.mobile.ui.ScamChainApp
@@ -32,10 +34,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         val filter = IntentFilter(ScreenCaptureService.ACTION_PREVIEW_READY)
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(previewReceiver, filter, RECEIVER_NOT_EXPORTED) else @Suppress("DEPRECATION") registerReceiver(previewReceiver, filter)
+        ContextCompat.registerReceiver(this, previewReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         previewReceiverInstance = previewReceiver
         setContent {
-            ScamChainTheme {
+            val themePreferences = remember { getSharedPreferences("trustguard_ui", Context.MODE_PRIVATE) }
+            var darkTheme by rememberSaveable { mutableStateOf(themePreferences.getBoolean("dark_theme", true)) }
+            ScamChainTheme(darkTheme = darkTheme) {
                 val captureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                     if (result.resultCode == Activity.RESULT_OK && result.data != null) {
                         startForegroundService(Intent(this, ScreenCaptureService::class.java).apply {
@@ -67,7 +71,12 @@ class MainActivity : ComponentActivity() {
                     accessibilityEnabled = { accessibilityAccess.value },
                     capturePreview = capturePreviewState.value,
                     onCapturePreviewConsumed = { capturePreviewState.value = null },
-                    onOpenOfficialPortal = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cybercrime.gov.in/"))) }
+                    onOpenOfficialPortal = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cybercrime.gov.in/"))) },
+                    darkTheme = darkTheme,
+                    onDarkThemeChange = { enabled ->
+                        darkTheme = enabled
+                        themePreferences.edit().putBoolean("dark_theme", enabled).apply()
+                    },
                 )
             }
         }

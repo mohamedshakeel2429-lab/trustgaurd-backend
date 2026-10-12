@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,14 +27,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -41,15 +47,16 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
+import android.content.res.Configuration
 import ai.scamchain.mobile.data.*
+import ai.scamchain.mobile.R
 import ai.scamchain.mobile.ui.theme.*
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-enum class ShieldState { IDLE, SCANNING, SUCCESS, WARNING, DANGER }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +69,8 @@ fun ScamChainApp(
     capturePreview: ByteArray?,
     onCapturePreviewConsumed: () -> Unit,
     onOpenOfficialPortal: () -> Unit,
+    darkTheme: Boolean,
+    onDarkThemeChange: (Boolean) -> Unit,
 ) {
     val appContext = LocalContext.current.applicationContext
     val firebaseAuth = remember(appContext) {
@@ -163,14 +172,14 @@ fun ScamChainApp(
                     Box(
                         Modifier
                             .padding(end = 12.dp)
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(Corner.large))
                             .background(NeuralCard)
-                            .border(1.dp, NeuralOutline, RoundedCornerShape(20.dp))
+                            .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(Modifier.size(7.dp).clip(CircleShape).background(SuccessGreen))
-                            Text("ONLINE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("READY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
                     }
                 },
@@ -183,7 +192,7 @@ fun ScamChainApp(
                     Modifier
                         .fillMaxWidth()
                         .background(NeuralBgSecondary)
-                        .border(1.dp, NeuralOutline, RoundedCornerShape(0.dp))
+                        .border(1.dp, NeuralOutline, RectangleShape)
                         .padding(horizontal = 6.dp, vertical = 6.dp)
                 ) {
                     RootTab("Home", Icons.Outlined.Shield, page == Page.HOME, Modifier.weight(1f)) { page = Page.HOME }
@@ -263,7 +272,9 @@ fun ScamChainApp(
                         firebaseAuth?.signOut()
                         authenticated = false
                         page = Page.AUTH
-                    }
+                    },
+                    darkTheme = darkTheme,
+                    onDarkThemeChange = onDarkThemeChange,
                 )
                 Page.SETUP -> SetupScreen(
                     overlayEnabled = overlayGranted(),
@@ -301,7 +312,7 @@ Risk Signal: ${result.risk}
 Category: ${result.category}
 Submitted Content: ${if (maskPii) maskPersonalData(messageText) else messageText}
 
-Prepared independently via TrustGuard Neural Shield.""".trimIndent()
+Prepared locally; not submitted. Preserve original messages, links, and transaction references.""".trimIndent()
                             page = Page.REPORT
                         },
                         onSaveIncident = {
@@ -328,90 +339,6 @@ private data class IncidentRecord(val id: String, val category: String, val risk
 private data class ChatLine(val role: String, val text: String, val sources: List<AnalysisSource> = emptyList(), val model: String = "", val webSearchUsed: Boolean = false)
 
 // -------------------------------------------------------------------------
-// REUSABLE NEURAL SHIELD COMPONENT
-// -------------------------------------------------------------------------
-@Composable
-fun NeuralShieldComponent(
-    state: ShieldState = ShieldState.IDLE,
-    modifier: Modifier = Modifier,
-    sizeDp: Int = 110
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "ShieldAnimation")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(if (state == ShieldState.SCANNING) 2200 else 8000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "Rotation"
-    )
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "Pulse"
-    )
-
-    val shieldColor = when (state) {
-        ShieldState.IDLE -> CyanAccent
-        ShieldState.SCANNING -> VioletAccent
-        ShieldState.SUCCESS -> SuccessGreen
-        ShieldState.WARNING -> WarningAmber
-        ShieldState.DANGER -> DangerRed
-    }
-
-    Box(modifier = modifier.size(sizeDp.dp), contentAlignment = Alignment.Center) {
-        // Outer glowing ring
-        Box(
-            Modifier
-                .size((sizeDp * 0.95f).dp)
-                .rotate(rotation)
-                .border(
-                    width = 2.dp,
-                    brush = Brush.sweepGradient(listOf(shieldColor, Color.Transparent, shieldColor.copy(alpha = 0.3f), shieldColor)),
-                    shape = CircleShape
-                )
-        )
-        // Middle pulse glow
-        Box(
-            Modifier
-                .size((sizeDp * 0.8f).dp)
-                .clip(CircleShape)
-                .background(shieldColor.copy(alpha = 0.12f))
-                .border(1.dp, shieldColor.copy(alpha = 0.4f), CircleShape)
-        )
-        // Center Shield Icon
-        Box(
-            Modifier
-                .size((sizeDp * 0.6f).dp)
-                .clip(RoundedCornerShape(sizeDp * 0.2f))
-                .background(
-                    Brush.verticalGradient(listOf(shieldColor.copy(alpha = 0.25f), NeuralCard))
-                )
-                .border(1.5.dp, shieldColor, RoundedCornerShape(sizeDp * 0.2f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = when (state) {
-                    ShieldState.IDLE -> Icons.Outlined.Shield
-                    ShieldState.SCANNING -> Icons.Outlined.Radar
-                    ShieldState.SUCCESS -> Icons.Outlined.VerifiedUser
-                    ShieldState.WARNING -> Icons.Outlined.GppMaybe
-                    ShieldState.DANGER -> Icons.Outlined.GppBad
-                },
-                contentDescription = "Neural Shield",
-                tint = shieldColor,
-                modifier = Modifier.size((sizeDp * 0.32f).dp)
-            )
-        }
-    }
-}
-
-// -------------------------------------------------------------------------
 // SPLASH SCREEN
 // -------------------------------------------------------------------------
 @Composable
@@ -430,9 +357,9 @@ private fun SplashScreen(onFinished: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            NeuralShieldComponent(state = ShieldState.SCANNING, sizeDp = 130)
+            LottieIcon(R.raw.shield_motion, "TrustGuard shield scanning", size = 130.dp, tint = Palette.signal, repeat = true)
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("TrustGuard", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = TextPrimary, letterSpacing = 0.5.sp)
+                Text("TrustGuard", fontSize = 34.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineLarge.fontFamily, color = TextPrimary, letterSpacing = 0.5.sp)
                 Text("TRUST WHAT YOU VERIFY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyanAccent, letterSpacing = 2.sp)
             }
             Spacer(Modifier.height(10.dp))
@@ -476,7 +403,7 @@ private fun OnboardingScreen(onFinish: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(24.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            NeuralShieldComponent(state = if (step == 1) ShieldState.SCANNING else ShieldState.IDLE, sizeDp = 140)
+            LottieIcon(if (step == 1) R.raw.scanning else R.raw.shield_motion, "TrustGuard shield", size = 140.dp, tint = Palette.signal, repeat = step == 1)
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(page.title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextPrimary, textAlign = TextAlign.Center)
                 Text(page.desc, fontSize = 14.sp, color = TextSecondary, textAlign = TextAlign.Center, lineHeight = 20.sp)
@@ -500,7 +427,7 @@ private fun OnboardingScreen(onFinish: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(Corner.small),
                 colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
             ) {
                 Text(if (step == 2) "Get Started" else "Continue", fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -534,31 +461,33 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        NeuralShieldComponent(state = ShieldState.IDLE, sizeDp = 90)
+        LottieIcon(R.raw.shield_motion, "TrustGuard shield", size = 90.dp, tint = Palette.signal)
         Spacer(Modifier.height(16.dp))
-        Text("TrustGuard", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text("TrustGuard", fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineLarge.fontFamily, color = TextPrimary)
         Text("TRUST WHAT YOU VERIFY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = CyanAccent, letterSpacing = 1.5.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("A second look before you act.", color = TextSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(24.dp))
 
         Card(
             colors = CardDefaults.cardColors(containerColor = NeuralCard),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(Corner.large),
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, NeuralOutline, RoundedCornerShape(22.dp))
+                .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(Corner.small))
                         .background(NeuralBgSecondary)
                         .padding(4.dp)
                 ) {
                     Box(
                         Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(Corner.small))
                             .background(if (!createAccount) CyanAccent else Color.Transparent)
                             .clickable { createAccount = false; message = null }
                             .padding(vertical = 8.dp),
@@ -569,7 +498,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                     Box(
                         Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(Corner.small))
                             .background(if (createAccount) CyanAccent else Color.Transparent)
                             .clickable { createAccount = true; message = null }
                             .padding(vertical = 8.dp),
@@ -588,7 +517,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                         singleLine = true,
                         enabled = !busy,
                         colors = neuralTextFieldColors(),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(Corner.small)
                     )
                 }
 
@@ -601,7 +530,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                     enabled = !busy,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     colors = neuralTextFieldColors(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(Corner.small)
                 )
 
                 OutlinedTextField(
@@ -619,20 +548,20 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     colors = neuralTextFieldColors(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(Corner.small)
                 )
 
                 if (message != null) {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(Corner.small))
                             .background(DangerRed.copy(alpha = 0.15f))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Outlined.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Outlined.ErrorOutline, "Sign-in error", tint = DangerRed, modifier = Modifier.size(16.dp))
                         Text(message!!, color = TextPrimary, fontSize = 12.sp, lineHeight = 16.sp)
                     }
                 }
@@ -669,7 +598,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(Corner.small),
                     colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
                 ) {
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = NeuralBg, strokeWidth = 2.dp)
@@ -708,6 +637,7 @@ private fun HomeScreen(
     latestIncident: IncidentRecord?,
     userName: String
 ) {
+    val scanlineColor = Palette.signal.copy(alpha = 0.035f)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 24.dp),
@@ -715,42 +645,51 @@ private fun HomeScreen(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Welcome, $userName", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Text("Your digital perimeter is protected.", fontSize = 13.sp, color = TextSecondary)
+                Text("Welcome, $userName", fontSize = 24.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineMedium.fontFamily, color = TextPrimary)
+                Text("Keep a clear head when a message feels urgent.", fontSize = 13.sp, color = TextSecondary)
             }
         }
 
         item {
             Card(
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(Corner.extraLarge),
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(24.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.extraLarge))
             ) {
                 Column(
                     Modifier
                         .fillMaxWidth()
+                        .background(Brush.linearGradient(listOf(NeuralCard, NeuralBgSecondary, NeuralBg)))
+                        .drawBehind {
+                            val step = 14.dp.toPx()
+                            var y = 0f
+                            while (y < size.height) {
+                                drawLine(scanlineColor, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1f)
+                                y += step
+                            }
+                        }
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    NeuralShieldComponent(state = ShieldState.IDLE, sizeDp = 100)
+                    LottieIcon(R.raw.shield_motion, "TrustGuard shield", size = 96.dp, tint = Palette.signal)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("NEURAL SHIELD ACTIVE", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp)
-                        Text("Ready to Analyze Content", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text("Submit suspicious SMS, web links, or screenshots for AI inspection.", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center, lineHeight = 17.sp)
+                        Text("FIELD DESK  /  READY", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp)
+                        Text("Pause. Check. Then act.", color = TextPrimary, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineMedium.fontFamily, fontSize = 21.sp, textAlign = TextAlign.Center)
+                        Text("Review suspicious messages, payment requests, links, or screenshots before you respond.", color = TextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center, lineHeight = 19.sp)
                     }
                 }
             }
         }
 
         item {
-            Text("PRIMARY ACTIONS", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+            Text("YOUR NEXT CHECK", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
             Spacer(Modifier.height(8.dp))
             Card(
                 onClick = onAnalyze,
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(Corner.large),
                 colors = CardDefaults.cardColors(containerColor = CyanAccent),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -764,17 +703,17 @@ private fun HomeScreen(
                     Box(
                         Modifier
                             .size(46.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(Corner.small))
                             .background(NeuralBg.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Outlined.Radar, null, tint = NeuralBg, modifier = Modifier.size(26.dp))
+                        Icon(Icons.Outlined.Radar, "Analyze content", tint = NeuralBg, modifier = Modifier.size(26.dp))
                     }
                     Column(Modifier.weight(1f)) {
                         Text("Analyze Content", color = NeuralBg, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         Text("Inspect text, links, or messages", color = NeuralBg.copy(alpha = 0.8f), fontSize = 12.sp)
                     }
-                    Icon(Icons.Outlined.ArrowForward, null, tint = NeuralBg)
+                    Icon(Icons.Outlined.ArrowForward, "Continue to analysis", tint = NeuralBg)
                 }
             }
 
@@ -785,11 +724,11 @@ private fun HomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(Corner.medium),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                     border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.horizontalGradient(listOf(NeuralOutline, NeuralOutline)))
                 ) {
-                    Icon(Icons.Outlined.ScreenshotMonitor, null, modifier = Modifier.size(18.dp), tint = CyanAccent)
+                    Icon(Icons.Outlined.ScreenshotMonitor, "Capture screen", modifier = Modifier.size(18.dp), tint = CyanAccent)
                     Spacer(Modifier.width(6.dp))
                     Text("Capture Screen", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
@@ -798,11 +737,11 @@ private fun HomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(Corner.medium),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                     border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.horizontalGradient(listOf(NeuralOutline, NeuralOutline)))
                 ) {
-                    Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(18.dp), tint = VioletAccent)
+                    Icon(Icons.Outlined.ChatBubbleOutline, "Open AI assistant", modifier = Modifier.size(18.dp), tint = CyanAccent)
                     Spacer(Modifier.width(6.dp))
                     Text("AI Assistant", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
@@ -813,22 +752,22 @@ private fun HomeScreen(
             Card(
                 onClick = onLearn,
                 colors = CardDefaults.cardColors(containerColor = NeuralBgSecondary),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(18.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
             ) {
                 Row(
                     Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Outlined.Lightbulb, null, tint = WarningAmber, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Outlined.Lightbulb, "Scam awareness tips", tint = WarningAmber, modifier = Modifier.size(22.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Scam Awareness Quiz & Tips", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text("Learn to identify OTP theft, phishing, and fake job offers.", color = TextSecondary, fontSize = 11.sp)
                     }
-                    Icon(Icons.Outlined.ChevronRight, null, tint = TextSecondary)
+                    Icon(Icons.Outlined.ChevronRight, "Open", tint = TextSecondary)
                 }
             }
         }
@@ -873,14 +812,14 @@ private fun ScanScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(22.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Outlined.Radar, null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.Radar, "Suspicious message or link", tint = CyanAccent, modifier = Modifier.size(20.dp))
                         Text("Suspicious Message or Link", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.weight(1f))
                         TextButton(
@@ -900,8 +839,9 @@ private fun ScanScreen(
                             .heightIn(min = 150.dp),
                         placeholder = { Text("Paste suspicious text, link, or message here…", color = TextSecondary) },
                         colors = neuralTextFieldColors(),
-                        shape = RoundedCornerShape(16.dp),
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                        shape = RoundedCornerShape(Corner.medium),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = EvidenceMono),
                     )
 
                     Button(
@@ -910,10 +850,10 @@ private fun ScanScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(Corner.small),
                         colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
                     ) {
-                        Icon(Icons.Outlined.Radar, null, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.Radar, "Start content analysis", modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Analyze with Neural Shield", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
@@ -921,7 +861,7 @@ private fun ScanScreen(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(Corner.small))
                             .background(NeuralBgSecondary)
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -930,7 +870,7 @@ private fun ScanScreen(
                             Text("Official Web Cross-Check", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text("Optional SerpApi search against official domains", color = TextSecondary, fontSize = 11.sp)
                         }
-                        Switch(checked = crossCheck, onCheckedChange = onCrossCheckChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg))
+                        Switch(checked = crossCheck, onCheckedChange = onCrossCheckChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
                     }
                 }
             }
@@ -940,18 +880,18 @@ private fun ScanScreen(
             Card(
                 onClick = onCapture,
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(18.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Outlined.ScreenshotMonitor, null, tint = VioletAccent, modifier = Modifier.size(24.dp))
+                    Icon(Icons.Outlined.ScreenshotMonitor, "Capture and analyze screen", tint = CyanAccent, modifier = Modifier.size(24.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Capture & Analyze Screen", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text("Android system permission is requested each time", color = TextSecondary, fontSize = 11.sp)
                     }
-                    Icon(Icons.Outlined.ChevronRight, null, tint = TextSecondary)
+                    Icon(Icons.Outlined.ChevronRight, "Open capture", tint = TextSecondary)
                 }
             }
         }
@@ -971,26 +911,22 @@ private fun AnalysisScreen(
 ) {
     val context = LocalContext.current
     val normalizedRisk = result.risk.trim().uppercase()
+    var verdictAppeared by remember(result.risk) { mutableStateOf(false) }
+    LaunchedEffect(result.risk) { verdictAppeared = true }
+    val stampScale by animateFloatAsState(if (verdictAppeared) 1f else 0.78f, animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "verdict-stamp-scale")
+    val stampAngle by animateFloatAsState(if (verdictAppeared) -2f else 3f, animationSpec = tween(Motion.reveal, easing = FastOutSlowInEasing), label = "verdict-stamp-angle")
     val failed = result.mode == "error" || normalizedRisk == "ANALYSIS FAILED"
     val high = normalizedRisk == "HIGH" || normalizedRisk == "HIGH RISK"
     val medium = normalizedRisk == "MEDIUM" || normalizedRisk == "SUSPICIOUS" || normalizedRisk == "INCONCLUSIVE"
     val noObviousThreat = normalizedRisk == "LOW" || normalizedRisk == "NO OBVIOUS THREAT DETECTED"
 
-    val shieldState = when {
-        failed -> ShieldState.DANGER
-        high -> ShieldState.DANGER
-        medium -> ShieldState.WARNING
-        noObviousThreat -> ShieldState.SUCCESS
-        else -> ShieldState.WARNING
-    }
-
     val riskColor = when {
-        normalizedRisk == "ANALYSIS FAILED" -> Color(0xFF90A4AE)
+        normalizedRisk == "ANALYSIS FAILED" -> RiskInconclusive
         failed || high -> DangerRed
         normalizedRisk == "SUSPICIOUS" || normalizedRisk == "MEDIUM" -> WarningAmber
         normalizedRisk == "NO OBVIOUS THREAT DETECTED" || normalizedRisk == "LOW" -> SuccessGreen
-        normalizedRisk == "INCONCLUSIVE" -> VioletAccent
-        else -> TextSecondary
+        normalizedRisk == "INCONCLUSIVE" -> RiskInconclusive
+        else -> RiskInconclusive
     }
 
     LazyColumn(
@@ -1000,7 +936,15 @@ private fun AnalysisScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                NeuralShieldComponent(state = shieldState, sizeDp = 64)
+                val animation = when {
+                    normalizedRisk == "…" -> R.raw.scanning
+                    failed -> R.raw.empty
+                    high -> R.raw.risk_high
+                    medium -> R.raw.risk_suspicious
+                    noObviousThreat -> R.raw.risk_safe
+                    else -> R.raw.empty
+                }
+                LottieIcon(animation, "${result.risk} screening verdict", size = 64.dp, tint = riskColor, repeat = normalizedRisk == "…")
                 Column {
                     Text("Screening Results", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Text("Model: ${result.model}", color = TextSecondary, fontSize = 11.sp)
@@ -1011,14 +955,27 @@ private fun AnalysisScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.5.dp, riskColor.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
+                    .border(1.5.dp, riskColor.copy(alpha = 0.6f), RoundedCornerShape(Corner.large))
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(riskColor))
+                    Row(
+                        Modifier.graphicsLayer { scaleX = stampScale; scaleY = stampScale; rotationZ = stampAngle }
+                            .border(1.dp, riskColor, RoundedCornerShape(Corner.stamp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val verdictIcon = when {
+                            failed -> Icons.Outlined.HelpOutline
+                            high -> Icons.Outlined.GppBad
+                            medium -> Icons.Outlined.GppMaybe
+                            noObviousThreat -> Icons.Outlined.VerifiedUser
+                            else -> Icons.Outlined.HelpOutline
+                        }
+                        Icon(verdictIcon, "${result.risk} verdict", tint = riskColor, modifier = Modifier.size(18.dp))
                         Text(result.risk.uppercase(), color = riskColor, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.sp)
                     }
                     Text(result.category, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -1029,7 +986,7 @@ private fun AnalysisScreen(
 
         if (!failed && result.uncertainty.isNotBlank()) {
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(16.dp)) {
+                Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.medium)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("UNCERTAINTY", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                         Text(result.uncertainty, color = TextPrimary, fontSize = 12.sp, lineHeight = 17.sp)
@@ -1047,12 +1004,13 @@ private fun AnalysisScreen(
 
             if (result.crossCheckSummary.isNotBlank()) {
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(16.dp)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.medium)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Official Sources Cross-Check", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text(result.crossCheckSummary, color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
                             result.sources.forEach { source ->
-                                Text("${source.title}: ${source.url}", color = CyanAccent, fontSize = 11.sp, modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } })
+                                Text(source.title, color = TextPrimary, fontSize = 11.sp)
+                                Text(source.url, color = CyanAccent, fontFamily = EvidenceMono, fontSize = 10.sp, modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } })
                             }
                         }
                     }
@@ -1068,7 +1026,7 @@ private fun AnalysisScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(Corner.small),
                         colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
                     ) {
                         Text("Prepare Report Summary", fontWeight = FontWeight.Bold)
@@ -1078,11 +1036,11 @@ private fun AnalysisScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(Corner.small),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                         border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.horizontalGradient(listOf(NeuralOutline, NeuralOutline)))
                     ) {
-                        Icon(Icons.Outlined.BookmarkBorder, null, tint = CyanAccent, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.BookmarkBorder, "Save analysis", tint = CyanAccent, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Save Private Record", fontWeight = FontWeight.Bold)
                     }
@@ -1134,7 +1092,7 @@ private fun ChatScreen(
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SuggestionChip(onClick = { onSuggestionSelected("Is this SMS link a scam? How can I check safely?") }, label = { Text("Check SMS Link", color = TextPrimary, fontSize = 11.sp) })
                 SuggestionChip(onClick = { onSuggestionSelected("What should I do immediately if I accidentally shared my OTP?") }, label = { Text("Shared OTP Advice", color = TextPrimary, fontSize = 11.sp) })
-                SuggestionChip(onClick = { onSuggestionSelected("How do I report financial cyber fraud in India using 1930?") }, label = { Text("Report Cyber Fraud (1930)", color = TextPrimary, fontSize = 11.sp) })
+                SuggestionChip(onClick = { onSuggestionSelected("I lost money on UPI. What should I do right now, including calling 1930?") }, label = { Text("Lost money on UPI", color = TextPrimary, fontSize = 11.sp) })
             }
         }
 
@@ -1154,15 +1112,15 @@ private fun ChatScreen(
                 ) {
                     Card(
                         modifier = Modifier.widthIn(max = 320.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = if (isUser) Color(0xFF1B3B48) else NeuralCard),
+                        shape = RoundedCornerShape(Corner.large),
+                        colors = CardDefaults.cardColors(containerColor = if (isUser) NeuralBgSecondary else NeuralCard),
                         border = if (!isUser) ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.horizontalGradient(listOf(NeuralOutline, NeuralOutline))) else null
                     ) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (!isUser) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(Icons.Outlined.Psychology, null, tint = VioletAccent, modifier = Modifier.size(15.dp))
-                                    Text("TRUSTGUARD AI", color = VioletAccent, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    Icon(Icons.Outlined.Psychology, "TrustGuard assistant", tint = CyanAccent, modifier = Modifier.size(15.dp))
+                                    Text("TRUSTGUARD AI", color = CyanAccent, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                                 }
                             }
                             Text(line.text, color = TextPrimary, fontSize = 13.sp, lineHeight = 19.sp)
@@ -1170,17 +1128,13 @@ private fun ChatScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text("SOURCES", color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                                     line.sources.forEach { source ->
-                                        Text(
-                                            source.title.ifBlank { source.url },
-                                            color = CyanAccent,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier.clickable {
+                                        Text(source.title.ifBlank { source.url }, color = TextPrimary, fontSize = 11.sp)
+                                        if (source.title.isNotBlank()) {
+                                            Text(source.url, color = CyanAccent, fontFamily = EvidenceMono, fontSize = 10.sp, modifier = Modifier.clickable {
                                                 val uri = Uri.parse(source.url)
-                                                if (uri.scheme == "https" || uri.scheme == "http") {
-                                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-                                                }
-                                            },
-                                        )
+                                                if (uri.scheme == "https" || uri.scheme == "http") runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                                            })
+                                        }
                                     }
                                 }
                             }
@@ -1191,7 +1145,7 @@ private fun ChatScreen(
             if (busy) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = VioletAccent, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyanAccent, strokeWidth = 2.dp)
                         Text("TrustGuard AI is analyzing…", color = TextSecondary, fontSize = 12.sp)
                     }
                 }
@@ -1202,13 +1156,13 @@ private fun ChatScreen(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(Corner.small))
                     .background(DangerRed.copy(alpha = 0.15f))
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Outlined.ErrorOutline, null, tint = DangerRed, modifier = Modifier.size(18.dp))
+                Icon(Icons.Outlined.ErrorOutline, "Message could not be sent", tint = DangerRed, modifier = Modifier.size(18.dp))
                 Text(error, color = TextPrimary, fontSize = 11.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = onRetry) { Text("Retry", color = CyanAccent, fontWeight = FontWeight.Bold) }
             }
@@ -1219,7 +1173,7 @@ private fun ChatScreen(
                 Text("Search Official Web", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text("Query SerpApi for current sources", color = TextSecondary, fontSize = 10.sp)
             }
-            Switch(checked = webSearch, onCheckedChange = onWebSearchChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg))
+            Switch(checked = webSearch, onCheckedChange = onWebSearchChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
         }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1229,7 +1183,7 @@ private fun ChatScreen(
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Ask anything…", color = TextSecondary) },
                 colors = neuralTextFieldColors(),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(Corner.large),
                 maxLines = 3
             )
             FilledIconButton(
@@ -1253,7 +1207,7 @@ private fun LearnScreen() {
         LearnTopic("Phishing SMS & Links", "Scammers send fake bank or package delivery links urging immediate action. Never click unexpected links.", Icons.Outlined.Link, DangerRed),
         LearnTopic("OTP & PIN Theft", "No bank or official authority will ever ask for your OTP or UPI PIN. Never share it with anyone.", Icons.Outlined.VpnKey, WarningAmber),
         LearnTopic("Fake Job Offers", "Part-time rating or online job offers asking for advance fees are 100% scams.", Icons.Outlined.WorkOutline, CyanAccent),
-        LearnTopic("Impersonation Fraud", "Scammers impersonate police or government officials demanding payment. Verify independently.", Icons.Outlined.Badge, VioletAccent)
+        LearnTopic("Impersonation Fraud", "Scammers impersonate police or government officials demanding payment. Verify independently.", Icons.Outlined.Badge, CyanAccent)
     )
 
     LazyColumn(
@@ -1271,15 +1225,15 @@ private fun LearnScreen() {
         items(topics) { topic ->
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(20.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.size(40.dp).clip(CircleShape).background(topic.color.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
-                            Icon(topic.icon, null, tint = topic.color, modifier = Modifier.size(20.dp))
+                            Icon(topic.icon, topic.title, tint = topic.color, modifier = Modifier.size(20.dp))
                         }
                         Text(topic.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
@@ -1313,10 +1267,10 @@ private fun ActivityScreen(incidents: List<IncidentRecord>, lastMessage: String?
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(Corner.large),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, NeuralOutline, RoundedCornerShape(20.dp))
+                        .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
                 ) {
                     Column(
                         Modifier
@@ -1325,7 +1279,7 @@ private fun ActivityScreen(incidents: List<IncidentRecord>, lastMessage: String?
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Outlined.Inbox, null, tint = CyanAccent, modifier = Modifier.size(36.dp))
+                        LottieIcon(R.raw.empty, "No saved records", size = 56.dp, tint = Palette.signal)
                         Text("No Saved Records Yet", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text("Saved screening notes will appear here.", color = TextSecondary, fontSize = 12.sp)
                     }
@@ -1350,7 +1304,9 @@ private fun PrivacyScreen(
     onSetup: () -> Unit,
     onAccessibilitySettings: () -> Unit,
     accessibilityEnabled: Boolean,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    darkTheme: Boolean,
+    onDarkThemeChange: (Boolean) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -1367,20 +1323,20 @@ private fun PrivacyScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(20.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(44.dp).clip(CircleShape).background(CyanAccent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Person, null, tint = CyanAccent, modifier = Modifier.size(22.dp))
+                        Icon(Icons.Outlined.Person, "Authenticated user", tint = CyanAccent, modifier = Modifier.size(22.dp))
                     }
                     Column(Modifier.weight(1f)) {
                         Text("Authenticated User", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(userEmail, color = TextSecondary, fontSize = 11.sp)
                     }
-                    OutlinedButton(onClick = onLogout, shape = RoundedCornerShape(10.dp)) {
+                    OutlinedButton(onClick = onLogout, shape = RoundedCornerShape(Corner.small)) {
                         Text("Logout", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -1391,20 +1347,22 @@ private fun PrivacyScreen(
             PrivacySetting("Mask Personal Data", "Hide phone numbers and emails before AI analysis.", maskPii, onMaskChange)
             Spacer(Modifier.height(10.dp))
             PrivacySetting("Floating Shortcut", "Display shortcut overlay button over other apps.", overlayEnabled, onOverlayChange)
+            Spacer(Modifier.height(10.dp))
+            PrivacySetting("Dark Forensic Noir", "Use the default ink moss appearance. Turn off for warm paper.", darkTheme, onDarkThemeChange)
         }
 
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeuralCard),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(Corner.large),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, NeuralOutline, RoundedCornerShape(18.dp))
+                    .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Accessibility Service", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text("Optional permission to assist reading onscreen text on explicit command.", color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
-                    OutlinedButton(onClick = onAccessibilitySettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    OutlinedButton(onClick = onAccessibilitySettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(Corner.small)) {
                         Text(if (accessibilityEnabled) "Review Android Settings" else "Open Android Accessibility Settings", color = CyanAccent, fontSize = 12.sp)
                     }
                 }
@@ -1441,17 +1399,18 @@ private fun CapturePreviewScreen(preview: ByteArray?, piiMasking: Boolean, onAna
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Review Captured Screen", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text("Image remains strictly local until analyzed.", color = TextSecondary, fontSize = 12.sp)
+                if (preview != null) LottieIcon(R.raw.success, "Screen capture ready for review", size = 44.dp, tint = Palette.safe)
             }
         }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(20.dp)) {
+            Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.large)) {
                 val bitmap = remember(preview) { preview?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
                 if (bitmap != null) Image(bitmap, contentDescription = "Captured Screen", modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp).padding(8.dp))
                 else Text("Preview unavailable.", Modifier.padding(18.dp), color = TextSecondary)
             }
         }
         item {
-            Button(onClick = onAnalyze, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)) {
+            Button(onClick = onAnalyze, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(Corner.small), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)) {
                 Text("Analyze Screen", fontWeight = FontWeight.Bold)
             }
         }
@@ -1465,18 +1424,29 @@ private fun ReportScreen(summary: String, onSummaryChange: (String) -> Unit, onO
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Report Summary", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("Format report for official submission.", color = TextSecondary, fontSize = 12.sp)
+                Text("Prepare notes and evidence before contacting the official service.", color = TextSecondary, fontSize = 12.sp)
             }
         }
         item {
-            OutlinedTextField(value = summary, onValueChange = onSummaryChange, modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp), colors = neuralTextFieldColors(), shape = RoundedCornerShape(16.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.large), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("NEXT STEPS", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp)
+                    Text("1. Call 1930 promptly for financial cyber fraud.", color = TextPrimary, fontSize = 13.sp)
+                    Text("2. Open cybercrime.gov.in to file a report.", color = TextPrimary, fontSize = 13.sp)
+                    Text("3. Keep original messages, screenshots, UPI IDs, and transaction references.", color = TextPrimary, fontSize = 13.sp)
+                    Text("Prepared locally; not submitted.", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
         item {
-            Button(onClick = { clipboard.setText(AnnotatedString(summary)) }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)) {
+            OutlinedTextField(value = summary, onValueChange = onSummaryChange, modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp), colors = neuralTextFieldColors(), shape = RoundedCornerShape(Corner.medium), textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = EvidenceMono))
+        }
+        item {
+            Button(onClick = { clipboard.setText(AnnotatedString(summary)) }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(Corner.small), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)) {
                 Text("Copy Summary", fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onOpenOfficialPortal, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(14.dp)) {
+            OutlinedButton(onClick = onOpenOfficialPortal, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(Corner.small)) {
                 Text("Open Cybercrime Portal", color = CyanAccent, fontWeight = FontWeight.Bold)
             }
         }
@@ -1489,7 +1459,7 @@ private fun ReportScreen(summary: String, onSummaryChange: (String) -> Unit, onO
 @Composable
 private fun BrandMark(size: Int) {
     Box(Modifier.size(size.dp).clip(RoundedCornerShape(size.dp * 0.28f)).background(CyanAccent), contentAlignment = Alignment.Center) {
-        Icon(Icons.Outlined.Shield, contentDescription = null, tint = NeuralBg, modifier = Modifier.size((size * 0.6f).dp))
+        Icon(painterResource(R.drawable.trustguard_mark), contentDescription = "TrustGuard verified shield logo", tint = NeuralBg, modifier = Modifier.size((size * 0.7f).dp))
     }
 }
 
@@ -1497,38 +1467,39 @@ private fun BrandMark(size: Int) {
 private fun RowScope.RootTab(label: String, icon: ImageVector, selected: Boolean, modifier: Modifier = Modifier, action: () -> Unit) {
     Column(
         modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Corner.small))
             .clickable(onClick = action)
+            .heightIn(min = 48.dp)
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Icon(icon, contentDescription = label, tint = if (selected) CyanAccent else TextSecondary, modifier = Modifier.size(20.dp))
-        Text(label, color = if (selected) CyanAccent else TextSecondary, fontSize = 9.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+        Text(label, color = if (selected) CyanAccent else TextSecondary, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
     }
 }
 
 @Composable
 private fun PrivacySetting(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(18.dp), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(18.dp))) {
+    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.large), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Outlined.Shield, null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+            Icon(Icons.Outlined.Shield, "Privacy setting", tint = CyanAccent, modifier = Modifier.size(20.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(subtitle, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
             }
-            Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg))
+            Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
         }
     }
 }
 
 @Composable
 private fun SetupCard(number: String, title: String, body: String, actionLabel: String, enabled: Boolean, action: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(18.dp), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(18.dp))) {
+    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.large), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("$number. $title", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Text(body, color = TextSecondary, fontSize = 11.sp)
-            OutlinedButton(onClick = action, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+            OutlinedButton(onClick = action, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(Corner.small)) {
                 Text(actionLabel, color = CyanAccent, fontSize = 12.sp)
             }
         }
@@ -1540,14 +1511,14 @@ private fun SignalRow(text: String) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Corner.small))
             .background(NeuralCard)
-            .border(1.dp, NeuralOutline, RoundedCornerShape(12.dp))
+            .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.small))
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Icon(Icons.Outlined.WarningAmber, null, tint = WarningAmber, modifier = Modifier.size(18.dp))
+        Icon(Icons.Outlined.WarningAmber, "Potential scam indicator", tint = WarningAmber, modifier = Modifier.size(18.dp))
         Text(text, color = TextPrimary, fontSize = 12.sp, lineHeight = 17.sp)
     }
 }
@@ -1559,16 +1530,16 @@ private fun AdviceRow(text: String) {
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Icon(Icons.Outlined.CheckCircleOutline, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
+        Icon(Icons.Outlined.CheckCircleOutline, "Recommended action", tint = SuccessGreen, modifier = Modifier.size(18.dp))
         Text(text, color = TextPrimary, fontSize = 12.sp, lineHeight = 17.sp)
     }
 }
 
 @Composable
 private fun IncidentCard(id: String, category: String, risk: String, status: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(16.dp), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(16.dp))) {
+    Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.medium), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(Corner.medium))) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Outlined.BookmarkBorder, null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+            Icon(Icons.Outlined.BookmarkBorder, "Saved incident", tint = CyanAccent, modifier = Modifier.size(20.dp))
             Column(Modifier.weight(1f)) {
                 Text(category, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text("$id · $status", color = TextSecondary, fontSize = 10.sp)
@@ -1593,3 +1564,30 @@ private fun maskPersonalData(input: String): String = input
     .replace(Regex("\\b(?:gsk|sk|ghp|gho|github_pat)_[A-Za-z0-9_-]{12,}\\b", RegexOption.IGNORE_CASE), "[API KEY]")
     .replace(Regex("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"), "[EMAIL]")
     .replace(Regex("(?<!\\d)(?:\\+?\\d[ -]?){9,15}(?!\\d)"), "[PHONE OR NUMBER]")
+
+@Preview(name = "Forensic Noir · dark", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+annotation class ForensicDarkPreview
+
+@Preview(name = "Warm Paper · light", uiMode = Configuration.UI_MODE_NIGHT_NO, showBackground = true)
+annotation class WarmPaperPreview
+
+@Composable
+private fun PreviewTheme(content: @Composable () -> Unit) {
+    ScamChainTheme(darkTheme = isSystemInDarkTheme(), content = content)
+}
+
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun SplashScreenPreview() = PreviewTheme { SplashScreen {} }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun OnboardingScreenPreview() = PreviewTheme { OnboardingScreen {} }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun LoginScreenPreview() = PreviewTheme { LoginScreen(null) {} }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun HomeScreenPreview() = PreviewTheme { HomeScreen(false, {}, {}, {}, {}, {}, null, "Asha") }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun ScanScreenPreview() = PreviewTheme { ScanScreen("", {}, {}, {}, {}, false, {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun AnalysisScreenPreview() = PreviewTheme {
+    AnalysisScreen("Example message", AnalysisResponse("SUSPICIOUS", "Payment request", listOf("Urgent payment language"), listOf("Verify with the sender through a known number.")), {}, {}, {})
+}
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun ChatScreenPreview() = PreviewTheme { ChatScreen(emptyList(), "", {}, false, null, false, {}, {}, {}, {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun LearnScreenPreview() = PreviewTheme { LearnScreen() }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun ActivityScreenPreview() = PreviewTheme { ActivityScreen(emptyList(), null) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun PrivacyScreenPreview() = PreviewTheme { PrivacyScreen("asha@example.in", true, {}, false, {}, {}, {}, false, {}, isSystemInDarkTheme(), {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun SetupScreenPreview() = PreviewTheme { SetupScreen(false, {}, {}, false, {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun CapturePreviewScreenPreview() = PreviewTheme { CapturePreviewScreen(null, true, {}, {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun ReportScreenPreview() = PreviewTheme { ReportScreen("TrustGuard analysis notes", {}, {}) }

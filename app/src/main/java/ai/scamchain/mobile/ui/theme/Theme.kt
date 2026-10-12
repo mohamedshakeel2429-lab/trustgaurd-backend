@@ -1,6 +1,5 @@
 package ai.scamchain.mobile.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -41,7 +40,7 @@ object Space {
     val lg = 20.dp; val xl = 24.dp; val xxl = 32.dp
 }
 object Corner {
-    val small = 12.dp; val medium = 16.dp; val large = 22.dp; val extraLarge = 28.dp
+    val stamp = 4.dp; val small = 12.dp; val medium = 16.dp; val large = 22.dp; val extraLarge = 28.dp
 }
 object Elevation { val hairline = 1.dp; val card = 2.dp; val floating = 6.dp }
 object Motion { const val quick = 140; const val standard = 240; const val reveal = 360; const val scan = 1800 }
@@ -57,7 +56,7 @@ private val DarkScheme @Composable get() = darkColorScheme(
     surface = LocalTrustGuardPalette.current.surface, onSurface = LocalTrustGuardPalette.current.text,
     surfaceVariant = LocalTrustGuardPalette.current.raised, onSurfaceVariant = LocalTrustGuardPalette.current.muted,
     outline = LocalTrustGuardPalette.current.border, outlineVariant = LocalTrustGuardPalette.current.border,
-    error = LocalTrustGuardPalette.current.high, onError = Color.White,
+    error = LocalTrustGuardPalette.current.high, onError = LocalTrustGuardPalette.current.background,
 )
 
 private val LightScheme @Composable get() = lightColorScheme(
@@ -86,7 +85,6 @@ val NeuralBg: Color @Composable get() = Palette.background
 val NeuralBgSecondary: Color @Composable get() = Palette.surface
 val NeuralCard: Color @Composable get() = Palette.raised
 val CyanAccent: Color @Composable get() = Palette.signal
-val VioletAccent: Color @Composable get() = Palette.signal
 val SuccessGreen: Color @Composable get() = Palette.safe
 val WarningAmber: Color @Composable get() = Palette.suspicious
 val DangerRed: Color @Composable get() = Palette.high
@@ -99,12 +97,11 @@ val RiskSafe: Color @Composable get() = Palette.safe
 val RiskInconclusive: Color @Composable get() = Palette.inconclusive
 
 @Composable
-fun ScamChainTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalTrustGuardPalette provides if (dark) InkMoss else WarmPaper) {
-        MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, typography = TrustGuardTypography, content = content)
+fun ScamChainTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalTrustGuardPalette provides if (darkTheme) InkMoss else WarmPaper) {
+        MaterialTheme(colorScheme = if (darkTheme) DarkScheme else LightScheme, typography = TrustGuardTypography, content = content)
     }
 }
 
 @Composable
-fun TrustGuardTheme(content: @Composable () -> Unit) = ScamChainTheme(content)
+fun TrustGuardTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) = ScamChainTheme(darkTheme, content)

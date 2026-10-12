@@ -15,6 +15,8 @@ SERPAPI_API_KEY=your_serpapi_key
 
 Start the service with `uvicorn app.main:app --host 0.0.0.0 --port 8000`. `/health` shows whether Groq and SerpApi are configured without returning either key. The Android app never stores provider credentials.
 
+With the backend running and `GROQ_API_KEY` configured, run `python smoke_test.py` from `backend` to exercise the live API. The smoke checks make several live Groq requests. If backend authentication is enabled, set `SCAMCHAIN_TEST_API_KEY` in the shell before running the script.
+
 ## Run Android
 
 Open this folder in Android Studio with JDK 17 and Android SDK Platform 36. Run the `app` configuration on an emulator. The default emulator backend is `http://10.0.2.2:8000/api/v1`. For a device or hosted backend, set `SCAMCHAIN_API_URL` or pass `-PscamchainApiUrl=https://your-host/api/v1` to Gradle. Debug permits cleartext HTTP for local development; release disables it.

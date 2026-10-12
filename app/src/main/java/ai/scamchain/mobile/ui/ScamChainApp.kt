@@ -970,22 +970,27 @@ private fun AnalysisScreen(
     onPrepareReport: () -> Unit
 ) {
     val context = LocalContext.current
-    val failed = result.mode == "error"
-    val high = result.risk.equals("High", true) || result.risk.equals("HIGH RISK", true)
-    val medium = result.risk.equals("Medium", true) || result.risk.equals("SUSPICIOUS", true) || result.risk.equals("INCONCLUSIVE", true)
+    val normalizedRisk = result.risk.trim().uppercase()
+    val failed = result.mode == "error" || normalizedRisk == "ANALYSIS FAILED"
+    val high = normalizedRisk == "HIGH" || normalizedRisk == "HIGH RISK"
+    val medium = normalizedRisk == "MEDIUM" || normalizedRisk == "SUSPICIOUS" || normalizedRisk == "INCONCLUSIVE"
+    val noObviousThreat = normalizedRisk == "LOW" || normalizedRisk == "NO OBVIOUS THREAT DETECTED"
 
     val shieldState = when {
         failed -> ShieldState.DANGER
         high -> ShieldState.DANGER
         medium -> ShieldState.WARNING
-        else -> ShieldState.SUCCESS
+        noObviousThreat -> ShieldState.SUCCESS
+        else -> ShieldState.WARNING
     }
 
     val riskColor = when {
-        failed -> DangerRed
-        high -> DangerRed
-        medium -> WarningAmber
-        else -> SuccessGreen
+        normalizedRisk == "ANALYSIS FAILED" -> Color(0xFF90A4AE)
+        failed || high -> DangerRed
+        normalizedRisk == "SUSPICIOUS" || normalizedRisk == "MEDIUM" -> WarningAmber
+        normalizedRisk == "NO OBVIOUS THREAT DETECTED" || normalizedRisk == "LOW" -> SuccessGreen
+        normalizedRisk == "INCONCLUSIVE" -> VioletAccent
+        else -> TextSecondary
     }
 
     LazyColumn(
@@ -1017,7 +1022,18 @@ private fun AnalysisScreen(
                         Text(result.risk.uppercase(), color = riskColor, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.sp)
                     }
                     Text(result.category, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("This is an automated AI signal. Verify unexpected requests through official contact channels.", color = TextSecondary, fontSize = 12.sp, lineHeight = 17.sp)
+                    Text(result.disclaimer, color = TextSecondary, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+        }
+
+        if (!failed && result.uncertainty.isNotBlank()) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("UNCERTAINTY", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Text(result.uncertainty, color = TextPrimary, fontSize = 12.sp, lineHeight = 17.sp)
+                    }
                 }
             }
         }
@@ -1095,6 +1111,7 @@ private fun ChatScreen(
     onSuggestionSelected: (String) -> Unit,
     onRetry: () -> Unit
 ) {
+    val context = LocalContext.current
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     LaunchedEffect(lines.size, busy) {
         if (lines.isNotEmpty() || busy) listState.animateScrollToItem((lines.size - 1 + if (busy) 1 else 0).coerceAtLeast(0))
@@ -1149,6 +1166,24 @@ private fun ChatScreen(
                                 }
                             }
                             Text(line.text, color = TextPrimary, fontSize = 13.sp, lineHeight = 19.sp)
+                            if (!isUser && line.sources.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("SOURCES", color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    line.sources.forEach { source ->
+                                        Text(
+                                            source.title.ifBlank { source.url },
+                                            color = CyanAccent,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.clickable {
+                                                val uri = Uri.parse(source.url)
+                                                if (uri.scheme == "https" || uri.scheme == "http") {
+                                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

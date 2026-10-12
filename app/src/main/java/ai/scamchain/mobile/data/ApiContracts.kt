@@ -24,6 +24,8 @@ data class AnalysisResponse(
     val risk: String, val category: String, val indicators: List<String>, val advice: List<String>,
     val model: String = "unknown", val mode: String = "groq",
     val crossCheckSummary: String = "", val sources: List<AnalysisSource> = emptyList(),
+    val uncertainty: String = "",
+    val disclaimer: String = "AI can make mistakes, including false alarms and missed scams. Verify important claims independently.",
 )
 data class AnalysisSource(val title: String, val url: String, val snippet: String = "")
 data class ChatMessage(val role: String, val content: String)
@@ -42,7 +44,10 @@ class RemoteScamChainApi(private val baseUrl: String) : ScamChainApi {
             json.array("indicators"), json.array("advice"), json.optString("model", "unknown"), json.optString("mode", "unknown"),
             json.optString("cross_check_summary"), json.optJSONArray("sources")?.let { arr ->
                 (0 until arr.length()).map { i -> arr.getJSONObject(i).let { AnalysisSource(it.optString("title"), it.optString("url"), it.optString("snippet")) } }
-            } ?: emptyList(),
+            } ?: emptyList(), json.optString("uncertainty"), json.optString(
+                "disclaimer",
+                "AI can make mistakes, including false alarms and missed scams. Verify important claims independently.",
+            ),
         )
     }
 
@@ -75,7 +80,16 @@ class RemoteScamChainApi(private val baseUrl: String) : ScamChainApi {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException("Backend returned HTTP $code: ${runCatching { JSONObject(response).optString("detail") }.getOrDefault("Request failed")}")
+            if (code !in 200..299) {
+                val detail = runCatching { JSONObject(response).optString("detail") }.getOrDefault("")
+                val message = when (code) {
+                    429 -> "Too many requests. Please wait a minute and try again."
+                    503 -> "TrustGuard is temporarily unavailable because its AI service is not configured. Please try again later."
+                    502 -> "The AI service couldn't complete that request. Please try again."
+                    else -> detail.ifBlank { "The request failed (HTTP $code). Please try again." }
+                }
+                throw IllegalStateException(message)
+            }
             return JSONObject(response)
         } finally { connection.disconnect() }
     }

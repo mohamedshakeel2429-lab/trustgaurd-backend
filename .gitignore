@@ -8,3 +8,14 @@ backend/.venv/
 backend/.vendor/
 backend/.tmp/
 backend/**/__pycache__/
+
+# Local environment files. Keep example templates versioned.
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

@@ -17,19 +17,23 @@ import android.view.WindowManager
 import java.io.File
 import java.io.FileOutputStream
 
-/** One user-approved capture, saves a local JPEG preview in cache, then immediately stops projection. */
+/** One user-approved capture, skips transient consent frames, saves a unique local JPEG preview in cache, then immediately stops projection. */
 class ScreenCaptureService : Service() {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
+    private var frameCount = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action != ACTION_CAPTURE) { stopSelf(); return START_NOT_STICKY }
         createChannel()
-        val notification = Notification.Builder(this, CHANNEL).setContentTitle("ScamChain capture")
-            .setContentText("Capturing one screen for your local preview")
-            .setSmallIcon(android.R.drawable.ic_menu_view).build()
+        val notification = Notification.Builder(this, CHANNEL)
+            .setContentTitle("TrustGuard capture")
+            .setContentText("Capturing current screen for safety review")
+            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(41, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         else startForeground(41, notification)
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
@@ -40,11 +44,22 @@ class ScreenCaptureService : Service() {
         projection?.registerCallback(object : MediaProjection.Callback() { override fun onStop() { cleanup() } }, android.os.Handler(mainLooper))
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION") (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
-        reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-        display = projection?.createVirtualDisplay("ScamChainPreview", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+        
+        frameCount = 0
+        reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 3)
+        display = projection?.createVirtualDisplay("TrustGuardPreview", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader?.surface, null, null)
+            
         reader?.setOnImageAvailableListener({ source ->
+            frameCount++
             val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
+            
+            // Skip initial transient frames so system consent dialog finishes dismissing
+            if (frameCount < 3) {
+                image.close()
+                return@setOnImageAvailableListener
+            }
+
             try {
                 val plane = image.planes[0]
                 val buffer = plane.buffer
@@ -54,12 +69,23 @@ class ScreenCaptureService : Service() {
                 val padded = Bitmap.createBitmap(metrics.widthPixels + rowPadding / pixelStride, metrics.heightPixels, Bitmap.Config.ARGB_8888)
                 padded.copyPixelsFromBuffer(buffer)
                 val bitmap = Bitmap.createBitmap(padded, 0, 0, metrics.widthPixels, metrics.heightPixels)
-                FileOutputStream(File(cacheDir, "latest-capture.jpg")).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-                sendBroadcast(Intent(ACTION_PREVIEW_READY).setPackage(packageName).putExtra(EXTRA_PREVIEW_PATH, File(cacheDir, "latest-capture.jpg").absolutePath))
-                bitmap.recycle(); padded.recycle()
-            } finally { image.close(); cleanup(); stopSelf() }
+                
+                // Clean up previous capture files
+                cacheDir.listFiles { _, name -> name.startsWith("capture-") || name == "latest-capture.jpg" }?.forEach { runCatching { it.delete() } }
+                
+                val captureFile = File(cacheDir, "capture-${System.currentTimeMillis()}.jpg")
+                FileOutputStream(captureFile).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+                
+                sendBroadcast(Intent(ACTION_PREVIEW_READY).setPackage(packageName).putExtra(EXTRA_PREVIEW_PATH, captureFile.absolutePath))
+                bitmap.recycle()
+                padded.recycle()
+            } finally {
+                image.close()
+                cleanup()
+                stopSelf()
+            }
         }, android.os.Handler(mainLooper))
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun cleanup() { display?.release(); display = null; reader?.close(); reader = null; val active = projection; projection = null; active?.stop() }

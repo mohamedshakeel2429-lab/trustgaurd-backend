@@ -1,4 +1,5 @@
 <resources>
-    <string name="app_name">ScamChain</string>
-    <string name="accessibility_description">Optional ScamChain text access. This service scaffold does not collect accessibility events or read screen text automatically. Review the in-app privacy disclosure before enabling.</string>
+    <string name="app_name">TrustGuard</string>
+    <string name="app_tagline">Trust What You Verify.</string>
+    <string name="accessibility_description">Optional TrustGuard text access. This service scaffold does not collect accessibility events or read screen text automatically. Review the in-app privacy disclosure before enabling.</string>
 </resources>

@@ -16,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import ai.scamchain.mobile.capture.ScreenCaptureService
@@ -40,6 +41,12 @@ class MainActivity : ComponentActivity() {
             val themePreferences = remember { getSharedPreferences("trustguard_ui", Context.MODE_PRIVATE) }
             var darkTheme by rememberSaveable { mutableStateOf(themePreferences.getBoolean("dark_theme", true)) }
             ScamChainTheme(darkTheme = darkTheme) {
+                SideEffect {
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
                 val captureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                     if (result.resultCode == Activity.RESULT_OK && result.data != null) {
                         startForegroundService(Intent(this, ScreenCaptureService::class.java).apply {

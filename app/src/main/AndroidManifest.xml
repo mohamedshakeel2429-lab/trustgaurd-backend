@@ -7,6 +7,8 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/trustguard_logo"
+        android:roundIcon="@drawable/trustguard_logo"
         android:label="TrustGuard"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="${allowCleartext}">
@@ -26,7 +28,7 @@
         <service
             android:name=".accessibility.ScreenTextAccessibilityService"
             android:exported="true"
-            android:label="TrustGuard text assist"
+            android:label="TrustGuard accessibility scaffold"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />

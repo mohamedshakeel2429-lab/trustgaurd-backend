@@ -12,17 +12,19 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import java.io.File
 import java.io.FileOutputStream
 
-/** One user-approved capture, skips transient consent frames, saves a unique local JPEG preview in cache, then immediately stops projection. */
+/** One user-approved capture, waits for the display to settle, saves a local JPEG preview, then stops projection. */
 class ScreenCaptureService : Service() {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var frameCount = 0
+    private var captureStartedAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -46,16 +48,17 @@ class ScreenCaptureService : Service() {
         @Suppress("DEPRECATION") (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
         
         frameCount = 0
+        captureStartedAt = SystemClock.elapsedRealtime()
         reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 3)
         display = projection?.createVirtualDisplay("TrustGuardPreview", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader?.surface, null, null)
             
         reader?.setOnImageAvailableListener({ source ->
-            frameCount++
             val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-            
-            // Skip initial transient frames so system consent dialog finishes dismissing
-            if (frameCount < 3) {
+
+            // Let the consent sheet and display transitions finish before choosing a frame.
+            frameCount++
+            if (frameCount < MIN_STABLE_FRAMES || SystemClock.elapsedRealtime() - captureStartedAt < CAPTURE_SETTLE_DELAY_MS) {
                 image.close()
                 return@setOnImageAvailableListener
             }
@@ -97,6 +100,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_DATA = "result_data"
         const val ACTION_PREVIEW_READY = "ai.scamchain.PREVIEW_READY"
         const val EXTRA_PREVIEW_PATH = "preview_path"
+        private const val CAPTURE_SETTLE_DELAY_MS = 2_000L
+        private const val MIN_STABLE_FRAMES = 8
         private const val CHANNEL = "scamchain_capture"
     }
 }

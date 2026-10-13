@@ -1,6 +1,6 @@
-# ScamChain Android
+# TrustGuard Android
 
-ScamChain is a Kotlin + Jetpack Compose Android app backed by a FastAPI service. All analysis and chat replies come from a configured Groq model. There is no local rule-based or mock response fallback: if Groq is unavailable or not configured, the app reports that clearly.
+TrustGuard is a Kotlin + Jetpack Compose Android app backed by a FastAPI service. All analysis and chat replies come from a configured Groq model. There is no local rule-based or mock response fallback: if Groq is unavailable or not configured, the app reports that clearly.
 
 ## Run the backend
 
@@ -23,7 +23,7 @@ Open this folder in Android Studio with JDK 17 and Android SDK Platform 36. Run 
 
 ## Firebase sign-in
 
-Firebase is configured for Android package `com.scamchain.app`. Enable Email/Password under Authentication sign-in providers in Firebase Console. New accounts save the display name and email in Firebase Authentication; passwords are handled by Firebase Auth and are not stored by ScamChain in another database.
+Firebase is configured for Android package `com.scamchain.app`. Enable Email/Password under Authentication sign-in providers in Firebase Console. New accounts save the display name and email in Firebase Authentication; passwords are handled by Firebase Auth and are not stored by TrustGuard in another database.
 
 ## App behavior
 

@@ -1,6 +1,7 @@
 package ai.scamchain.mobile.overlay
 
 import android.app.Service
+import android.content.res.ColorStateList
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,12 +14,13 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
-import android.widget.TextView
+import android.widget.ImageView
+import ai.scamchain.mobile.R
 
 /** User-enabled launcher bubble; tapping opens TrustGuard. It does not inspect screen content. */
 class OverlayService : Service() {
     private var windowManager: WindowManager? = null
-    private var bubble: TextView? = null
+    private var bubble: ImageView? = null
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
@@ -40,19 +42,19 @@ class OverlayService : Service() {
         }
         if (bubble != null) return START_STICKY
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        bubble = TextView(this).apply {
-            text = "TG"
-            textSize = 14f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
+        bubble = ImageView(this).apply {
+            setImageResource(R.drawable.trustguard_mark)
+            imageTintList = ColorStateList.valueOf(Color.parseColor("#2EE3F7"))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val inset = (13 * resources.displayMetrics.density).toInt()
+            setPadding(inset, inset, inset, inset)
             contentDescription = "Open TrustGuard safety checker"
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.rgb(53, 224, 242)) // Electric cyan
-                setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#080B12"))
+                setColor(Color.parseColor("#070B16"))
+                setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#A67AFA"))
             }
             elevation = 8 * resources.displayMetrics.density
-            gravity = Gravity.CENTER
             setOnClickListener {
                 val launch = packageManager.getLaunchIntentForPackage(packageName)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 if (launch != null) startActivity(launch)

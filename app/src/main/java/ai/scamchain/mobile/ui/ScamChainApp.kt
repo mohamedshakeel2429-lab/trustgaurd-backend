@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
@@ -76,16 +78,8 @@ fun ScamChainApp(
     val firebaseAuth = remember(appContext) {
         runCatching {
             if (FirebaseApp.getApps(appContext).isEmpty()) {
-                try {
-                    FirebaseApp.initializeApp(appContext)
-                } catch (e: Exception) {
-                    val options = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId("1:653448662001:android:2274dbf02c579ac8d29250")
-                        .setApiKey("AIzaSyAByXo0fIZoQY_q8jLwcqQ7KqTuwZKe1Cw")
-                        .setProjectId("it-expo")
-                        .setStorageBucket("it-expo.firebasestorage.app")
-                        .build()
-                    FirebaseApp.initializeApp(appContext, options)
+                requireNotNull(FirebaseApp.initializeApp(appContext)) {
+                    "Firebase is not configured. Check the local google-services.json file."
                 }
             }
             FirebaseAuth.getInstance()
@@ -141,6 +135,7 @@ fun ScamChainApp(
     var chatWebSearch by remember { mutableStateOf(false) }
     var analysisGeneration by remember { mutableIntStateOf(0) }
     var incidentMessage by remember { mutableStateOf<String?>(null) }
+    var incidentError by remember { mutableStateOf(false) }
     var pendingImage by remember { mutableStateOf<ByteArray?>(null) }
     var reportSummary by remember { mutableStateOf("") }
     val incidents = remember { mutableStateListOf<IncidentRecord>() }
@@ -151,6 +146,8 @@ fun ScamChainApp(
     LaunchedEffect(capturePreview) { if (capturePreview != null) page = Page.PREVIEW }
 
     val isRoot = page in setOf(Page.HOME, Page.SCAN, Page.CHAT, Page.LEARN, Page.PRIVACY)
+    val backgroundViolet = VioletAccent
+    val backgroundCyan = CyanAccent
 
     Scaffold(
         containerColor = NeuralBg,
@@ -169,17 +166,9 @@ fun ScamChainApp(
                     IconButton(onClick = { page = Page.HOME }) { Icon(Icons.Outlined.ArrowBack, "Back", tint = TextPrimary) }
                 }) else ({ Spacer(Modifier.width(8.dp)) }),
                 actions = {
-                    Box(
-                        Modifier
-                            .padding(end = 12.dp)
-                            .clip(RoundedCornerShape(Corner.large))
-                            .background(NeuralCard)
-                            .border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(Modifier.size(7.dp).clip(CircleShape).background(SuccessGreen))
-                            Text("READY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    if (page != Page.PRIVACY) {
+                        IconButton(onClick = { page = Page.PRIVACY }) {
+                            Icon(Icons.Outlined.Tune, contentDescription = "Open TrustGuard settings", tint = TextSecondary)
                         }
                     }
                 },
@@ -197,14 +186,32 @@ fun ScamChainApp(
                 ) {
                     RootTab("Home", Icons.Outlined.Shield, page == Page.HOME, Modifier.weight(1f)) { page = Page.HOME }
                     RootTab("Analyze", Icons.Outlined.Radar, page == Page.SCAN, Modifier.weight(1f)) { page = Page.SCAN }
-                    RootTab("AI Assistant", Icons.Outlined.ChatBubbleOutline, page == Page.CHAT, Modifier.weight(1f)) { page = Page.CHAT }
+                    RootTab("Assistant", Icons.Outlined.ChatBubbleOutline, page == Page.CHAT, Modifier.weight(1f)) { page = Page.CHAT }
                     RootTab("Learn", Icons.Outlined.Lightbulb, page == Page.LEARN, Modifier.weight(1f)) { page = Page.LEARN }
                     RootTab("Privacy", Icons.Outlined.Lock, page == Page.PRIVACY, Modifier.weight(1f)) { page = Page.PRIVACY }
                 }
             }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(NeuralBg)
+                .drawBehind {
+                    val glowRadius = size.width * 0.72f
+                    drawCircle(
+                        Brush.radialGradient(listOf(backgroundViolet.copy(alpha = 0.10f), Color.Transparent), radius = glowRadius),
+                        radius = glowRadius,
+                        center = androidx.compose.ui.geometry.Offset(size.width, 0f),
+                    )
+                    drawCircle(
+                        Brush.radialGradient(listOf(backgroundCyan.copy(alpha = 0.045f), Color.Transparent), radius = glowRadius),
+                        radius = glowRadius,
+                        center = androidx.compose.ui.geometry.Offset(0f, size.height),
+                    )
+                }
+                .padding(padding)
+        ) {
             when (page) {
                 Page.HOME -> HomeScreen(
                     overlayOn = overlayGranted(),
@@ -213,17 +220,18 @@ fun ScamChainApp(
                     onLearn = { page = Page.LEARN },
                     onCapture = onRequestCapture,
                     onSetup = { page = Page.SETUP },
+                    onActivity = { page = Page.ACTIVITY },
                     latestIncident = incidents.firstOrNull(),
-                    userName = firebaseAuth?.currentUser?.displayName ?: "Security User"
+                    userName = firebaseAuth?.currentUser?.displayName?.substringBefore(' ')?.takeIf(String::isNotBlank) ?: "there"
                 )
                 Page.SCAN -> ScanScreen(
                     text = messageText,
                     onTextChange = { messageText = it },
                     onCapture = onRequestCapture,
                     onAnalyze = { if (messageText.isNotBlank()) { pendingImage = null; analysisGeneration++; page = Page.ANALYSIS } },
-                    onSetup = { page = Page.SETUP },
                     crossCheck = crossCheck,
-                    onCrossCheckChange = { crossCheck = it }
+                    onCrossCheckChange = { crossCheck = it },
+                    piiMasking = maskPii,
                 )
                 Page.CHAT -> ChatScreen(
                     lines = chatLines,
@@ -258,9 +266,9 @@ fun ScamChainApp(
                     }
                 )
                 Page.LEARN -> LearnScreen()
-                Page.ACTIVITY -> ActivityScreen(incidents, incidentMessage)
+                Page.ACTIVITY -> ActivityScreen(incidents, incidentMessage, incidentError)
                 Page.PRIVACY -> PrivacyScreen(
-                    userEmail = firebaseAuth?.currentUser?.email ?: "anonymous@trustguard.ai",
+                    userEmail = firebaseAuth?.currentUser?.email ?: "Email unavailable on this account",
                     maskPii = maskPii,
                     onMaskChange = { maskPii = it },
                     overlayEnabled = overlayGranted(),
@@ -293,14 +301,19 @@ fun ScamChainApp(
                         page = Page.ANALYSIS
                         onCapturePreviewConsumed()
                     },
+                    onRetake = {
+                        onCapturePreviewConsumed()
+                        page = Page.HOME
+                        onRequestCapture()
+                    },
                     onDiscard = { onCapturePreviewConsumed(); page = Page.HOME }
                 )
                 Page.ANALYSIS -> {
                     val analysisText = if (maskPii) maskPersonalData(messageText) else messageText
                     val imageForAnalysis = pendingImage
-                    val result by produceState(initialValue = AnalysisResponse("…", "Connecting Neural Shield Engine", emptyList(), emptyList()), analysisText, crossCheck, analysisGeneration) {
+                    val result by produceState(initialValue = AnalysisResponse("…", "Checking submitted content", emptyList(), emptyList(), "unknown", "loading"), analysisText, crossCheck, analysisGeneration) {
                         value = try { api.analyze(AnalyzeRequest(analysisText, image = imageForAnalysis, crossCheck = crossCheck)) }
-                        catch (e: Exception) { AnalysisResponse("Unavailable", "Neural Shield Offline", listOf(e.message ?: "Server connection failed"), listOf("Check backend connection and retry."), "unavailable", "error") }
+                        catch (e: Exception) { AnalysisResponse("Unavailable", "Analysis could not be completed", listOf(e.message ?: "The service did not return an analysis."), emptyList(), "unavailable", "error") }
                         pendingImage = null
                     }
                     AnalysisScreen(
@@ -317,10 +330,16 @@ Prepared locally; not submitted. Preserve original messages, links, and transact
                         },
                         onSaveIncident = {
                             scope.launch {
-                                val response = api.createIncident(IncidentRequest(result.category, result.risk, "User verified record"))
-                                val record = IncidentRecord(response.incidentId, result.category, result.risk, response.status)
-                                incidents.add(0, record)
-                                incidentMessage = "Saved to local activity log · ${record.id}"
+                                try {
+                                    val response = api.createIncident(IncidentRequest(result.category, result.risk, "User requested a prepared activity reference"))
+                                    val record = IncidentRecord(response.incidentId, result.category, result.risk, response.status)
+                                    incidents.add(0, record)
+                                    incidentError = false
+                                    incidentMessage = "Reference ${record.id} prepared for this session. Nothing was filed or stored by the service."
+                                } catch (e: Exception) {
+                                    incidentError = true
+                                    incidentMessage = e.message ?: "Could not prepare this activity record."
+                                }
                                 page = Page.ACTIVITY
                             }
                         },
@@ -350,14 +369,27 @@ private fun SplashScreen(onFinished: () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(NeuralBg),
+            .nightwatchCanvas(),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            LottieIcon(R.raw.shield_motion, "TrustGuard shield scanning", size = 130.dp, tint = Palette.signal, repeat = true)
+            Box(
+                Modifier
+                    .size(150.dp)
+                    .clip(RoundedCornerShape(30.dp))
+                    .border(1.5.dp, CyanAccent.copy(alpha = 0.5f), RoundedCornerShape(30.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.trustguard_logo),
+                    contentDescription = "TrustGuard Logo",
+                    modifier = Modifier.fillMaxSize().padding(10.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                )
+            }
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("TrustGuard", fontSize = 34.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineLarge.fontFamily, color = TextPrimary, letterSpacing = 0.5.sp)
                 Text("TRUST WHAT YOU VERIFY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyanAccent, letterSpacing = 2.sp)
@@ -375,16 +407,16 @@ private fun SplashScreen(onFinished: () -> Unit) {
 private fun OnboardingScreen(onFinish: () -> Unit) {
     var step by remember { mutableIntStateOf(0) }
     val pages = listOf(
-        OnboardPage("AI Scam Detection", "Instant neural protection against phishing, fake links, and payment fraud.", Icons.Outlined.Psychology),
-        OnboardPage("Neural Shield Scan", "Inspect text, suspicious links, and screenshots in milliseconds.", Icons.Outlined.Radar),
-        OnboardPage("Privacy Safeguards", "Automatic PII data masking. Your screen is never watched in the background.", Icons.Outlined.Shield)
+        OnboardPage("A second look, before you act", "Check suspicious messages and payment requests before you reply or share a code.", Icons.Outlined.Psychology),
+        OnboardPage("Review what you choose", "Paste a message or link, or approve a one-time screenshot for analysis.", Icons.Outlined.Radar),
+        OnboardPage("Privacy stays in your hands", "Email and long-number masking starts on. Screen content is never collected in the background.", Icons.Outlined.Shield)
     )
     val page = pages[step]
 
     Column(
         Modifier
             .fillMaxSize()
-            .background(NeuralBg)
+            .nightwatchCanvas()
             .padding(24.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
@@ -428,7 +460,7 @@ private fun OnboardingScreen(onFinish: () -> Unit) {
                     .fillMaxWidth()
                     .height(52.dp),
                 shape = RoundedCornerShape(Corner.small),
-                colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
+                colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Palette.textOnSignal)
             ) {
                 Text(if (step == 2) "Get Started" else "Continue", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
@@ -450,18 +482,32 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
     var passwordVisible by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageIsError by remember { mutableStateOf(true) }
 
     Column(
         Modifier
             .fillMaxSize()
-            .background(NeuralBg)
+            .nightwatchCanvas()
             .verticalScroll(rememberScrollState())
             .imePadding()
             .padding(horizontal = 24.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        LottieIcon(R.raw.shield_motion, "TrustGuard shield", size = 90.dp, tint = Palette.signal)
+        Box(
+            Modifier
+                .size(110.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .border(1.dp, CyanAccent.copy(alpha = 0.4f), RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.trustguard_logo),
+                contentDescription = "TrustGuard Logo",
+                modifier = Modifier.fillMaxSize().padding(8.dp),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+            )
+        }
         Spacer(Modifier.height(16.dp))
         Text("TrustGuard", fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineLarge.fontFamily, color = TextPrimary)
         Text("TRUST WHAT YOU VERIFY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = CyanAccent, letterSpacing = 1.5.sp)
@@ -489,22 +535,22 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                             .weight(1f)
                             .clip(RoundedCornerShape(Corner.small))
                             .background(if (!createAccount) CyanAccent else Color.Transparent)
-                            .clickable { createAccount = false; message = null }
+                            .selectable(selected = !createAccount, onClick = { createAccount = false; message = null }, role = Role.Tab)
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Sign In", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (!createAccount) NeuralBg else TextPrimary)
+                        Text("Sign In", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (!createAccount) Palette.textOnSignal else TextPrimary)
                     }
                     Box(
                         Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(Corner.small))
                             .background(if (createAccount) CyanAccent else Color.Transparent)
-                            .clickable { createAccount = true; message = null }
+                            .selectable(selected = createAccount, onClick = { createAccount = true; message = null }, role = Role.Tab)
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Create Account", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (createAccount) NeuralBg else TextPrimary)
+                        Text("Create Account", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (createAccount) Palette.textOnSignal else TextPrimary)
                     }
                 }
 
@@ -556,12 +602,17 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(Corner.small))
-                            .background(DangerRed.copy(alpha = 0.15f))
+                            .background((if (messageIsError) DangerRed else SuccessGreen).copy(alpha = 0.14f))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Outlined.ErrorOutline, "Sign-in error", tint = DangerRed, modifier = Modifier.size(16.dp))
+                        Icon(
+                            if (messageIsError) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle,
+                            contentDescription = if (messageIsError) "Authentication error" else "Password reset status",
+                            tint = if (messageIsError) DangerRed else SuccessGreen,
+                            modifier = Modifier.size(16.dp),
+                        )
                         Text(message!!, color = TextPrimary, fontSize = 12.sp, lineHeight = 16.sp)
                     }
                 }
@@ -571,6 +622,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                         val auth = firebaseAuth ?: return@Button
                         if (email.isBlank() || password.isBlank() || (createAccount && displayName.isBlank())) {
                             message = "Please complete all required fields."
+                            messageIsError = true
                             return@Button
                         }
                         busy = true
@@ -581,6 +633,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                         task.addOnCompleteListener { result ->
                             if (!result.isSuccessful) {
                                 busy = false
+                                messageIsError = true
                                 message = result.exception?.localizedMessage ?: "Authentication failed."
                             } else if (createAccount) {
                                 val profile = UserProfileChangeRequest.Builder().setDisplayName(displayName.trim()).build()
@@ -599,10 +652,19 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                         .fillMaxWidth()
                         .height(50.dp),
                     shape = RoundedCornerShape(Corner.small),
-                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Palette.textOnSignal)
                 ) {
-                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = NeuralBg, strokeWidth = 2.dp)
-                    else Text(if (createAccount) "Register Account" else "Authenticate", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Palette.textOnSignal, strokeWidth = 2.dp)
+                    else Text(if (createAccount) "Create account" else "Sign in", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+
+                if (firebaseAuth == null) {
+                    Text(
+                        "Sign-in is unavailable because Firebase is not configured for this build.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
                 }
 
                 if (!createAccount) {
@@ -610,6 +672,7 @@ private fun LoginScreen(firebaseAuth: FirebaseAuth?, onAuthenticated: () -> Unit
                         enabled = firebaseAuth != null && !busy && email.isNotBlank(),
                         onClick = {
                             firebaseAuth?.sendPasswordResetEmail(email.trim())?.addOnCompleteListener { result ->
+                                messageIsError = !result.isSuccessful
                                 message = if (result.isSuccessful) "Password reset instructions sent to email." else result.exception?.localizedMessage ?: "Password reset failed."
                             }
                         },
@@ -634,6 +697,7 @@ private fun HomeScreen(
     onLearn: () -> Unit,
     onCapture: () -> Unit,
     onSetup: () -> Unit,
+    onActivity: () -> Unit,
     latestIncident: IncidentRecord?,
     userName: String
 ) {
@@ -645,8 +709,8 @@ private fun HomeScreen(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Welcome, $userName", fontSize = 24.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineMedium.fontFamily, color = TextPrimary)
-                Text("Keep a clear head when a message feels urgent.", fontSize = 13.sp, color = TextSecondary)
+                Text(if (userName.isBlank()) "Your safety desk" else "Welcome, $userName", fontSize = 24.sp, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineMedium.fontFamily, color = TextPrimary)
+                Text("Pause for a second look before you respond.", fontSize = 13.sp, color = TextSecondary)
             }
         }
 
@@ -661,7 +725,7 @@ private fun HomeScreen(
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .background(Brush.linearGradient(listOf(NeuralCard, NeuralBgSecondary, NeuralBg)))
+                        .background(Brush.linearGradient(listOf(Palette.elevated, NeuralCard, NeuralBgSecondary)))
                         .drawBehind {
                             val step = 14.dp.toPx()
                             var y = 0f
@@ -676,7 +740,7 @@ private fun HomeScreen(
                 ) {
                     LottieIcon(R.raw.shield_motion, "TrustGuard shield", size = 96.dp, tint = Palette.signal)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("FIELD DESK  /  READY", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp)
+                        Text("YOUR PRIVATE SAFETY DESK", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.2.sp)
                         Text("Pause. Check. Then act.", color = TextPrimary, fontWeight = FontWeight.Bold, fontFamily = MaterialTheme.typography.headlineMedium.fontFamily, fontSize = 21.sp, textAlign = TextAlign.Center)
                         Text("Review suspicious messages, payment requests, links, or screenshots before you respond.", color = TextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center, lineHeight = 19.sp)
                     }
@@ -707,13 +771,13 @@ private fun HomeScreen(
                             .background(NeuralBg.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Outlined.Radar, "Analyze content", tint = NeuralBg, modifier = Modifier.size(26.dp))
+                        Icon(Icons.Outlined.Radar, "Analyze content", tint = Palette.textOnSignal, modifier = Modifier.size(26.dp))
                     }
                     Column(Modifier.weight(1f)) {
-                        Text("Analyze Content", color = NeuralBg, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Text("Inspect text, links, or messages", color = NeuralBg.copy(alpha = 0.8f), fontSize = 12.sp)
+                        Text("Analyze a message", color = Palette.textOnSignal, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Text("Review text, a link, or a screenshot", color = Palette.textOnSignal.copy(alpha = 0.78f), fontSize = 12.sp)
                     }
-                    Icon(Icons.Outlined.ArrowForward, "Continue to analysis", tint = NeuralBg)
+                    Icon(Icons.Outlined.ArrowForward, "Continue to analysis", tint = Palette.textOnSignal)
                 }
             }
 
@@ -764,10 +828,58 @@ private fun HomeScreen(
                 ) {
                     Icon(Icons.Outlined.Lightbulb, "Scam awareness tips", tint = WarningAmber, modifier = Modifier.size(22.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Scam Awareness Quiz & Tips", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Scam Awareness", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text("Learn to identify OTP theft, phishing, and fake job offers.", color = TextSecondary, fontSize = 11.sp)
                     }
                     Icon(Icons.Outlined.ChevronRight, "Open", tint = TextSecondary)
+                }
+            }
+        }
+
+        item {
+            Card(
+                onClick = onSetup,
+                colors = CardDefaults.cardColors(containerColor = NeuralBgSecondary),
+                shape = RoundedCornerShape(Corner.large),
+                modifier = Modifier.fillMaxWidth().border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large)),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Outlined.SettingsSuggest, contentDescription = null, tint = VioletAccent)
+                    Column(Modifier.weight(1f)) {
+                        Text("Optional Android tools", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            if (overlayOn) "Shortcut permission is available." else "Set up the floating shortcut or screen capture.",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Text("SETUP", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                }
+            }
+        }
+
+        item {
+            Card(
+                onClick = onActivity,
+                colors = CardDefaults.cardColors(containerColor = Palette.elevated),
+                shape = RoundedCornerShape(Corner.large),
+                modifier = Modifier.fillMaxWidth().border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large)),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Outlined.History, contentDescription = null, tint = VioletAccent, modifier = Modifier.size(22.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Activity", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            if (latestIncident == null) "No prepared records in this session yet." else "Open this session’s prepared records.",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Icon(Icons.Outlined.ChevronRight, contentDescription = "Open activity", tint = TextSecondary)
                 }
             }
         }
@@ -791,9 +903,9 @@ private fun ScanScreen(
     onTextChange: (String) -> Unit,
     onCapture: () -> Unit,
     onAnalyze: () -> Unit,
-    onSetup: () -> Unit,
     crossCheck: Boolean,
-    onCrossCheckChange: (Boolean) -> Unit
+    onCrossCheckChange: (Boolean) -> Unit,
+    piiMasking: Boolean,
 ) {
     val clipboardManager = LocalClipboardManager.current
 
@@ -805,7 +917,7 @@ private fun ScanScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Analyze Content", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                Text("Submit text or URLs to Neural Shield for risk screening.", color = TextSecondary, fontSize = 13.sp)
+                Text("Review a message, link, or screenshot before acting.", color = TextSecondary, fontSize = 13.sp)
             }
         }
 
@@ -844,6 +956,20 @@ private fun ScanScreen(
                         textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = EvidenceMono),
                     )
 
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(Corner.small)).background(NeuralBgSecondary).padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Outlined.Lock, contentDescription = null, tint = VioletAccent, modifier = Modifier.size(16.dp))
+                        Text(
+                            if (piiMasking) "Email addresses and long numbers are masked on device before analysis." else "Personal-data masking is off. Remove sensitive details before sending.",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+
                     Button(
                         onClick = onAnalyze,
                         enabled = text.isNotBlank(),
@@ -851,11 +977,11 @@ private fun ScanScreen(
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(Corner.small),
-                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Palette.textOnSignal)
                     ) {
                         Icon(Icons.Outlined.Radar, "Start content analysis", modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Analyze with Neural Shield", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Analyze message", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
 
                     Row(
@@ -870,7 +996,7 @@ private fun ScanScreen(
                             Text("Official Web Cross-Check", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text("Optional SerpApi search against official domains", color = TextSecondary, fontSize = 11.sp)
                         }
-                        Switch(checked = crossCheck, onCheckedChange = onCrossCheckChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
+                        Switch(checked = crossCheck, onCheckedChange = onCrossCheckChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = Palette.textOnSignal, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
                     }
                 }
             }
@@ -917,17 +1043,10 @@ private fun AnalysisScreen(
     val stampAngle by animateFloatAsState(if (verdictAppeared) -2f else 3f, animationSpec = tween(Motion.reveal, easing = FastOutSlowInEasing), label = "verdict-stamp-angle")
     val failed = result.mode == "error" || normalizedRisk == "ANALYSIS FAILED"
     val high = normalizedRisk == "HIGH" || normalizedRisk == "HIGH RISK"
-    val medium = normalizedRisk == "MEDIUM" || normalizedRisk == "SUSPICIOUS" || normalizedRisk == "INCONCLUSIVE"
+    val medium = normalizedRisk == "MEDIUM" || normalizedRisk == "SUSPICIOUS"
     val noObviousThreat = normalizedRisk == "LOW" || normalizedRisk == "NO OBVIOUS THREAT DETECTED"
 
-    val riskColor = when {
-        normalizedRisk == "ANALYSIS FAILED" -> RiskInconclusive
-        failed || high -> DangerRed
-        normalizedRisk == "SUSPICIOUS" || normalizedRisk == "MEDIUM" -> WarningAmber
-        normalizedRisk == "NO OBVIOUS THREAT DETECTED" || normalizedRisk == "LOW" -> SuccessGreen
-        normalizedRisk == "INCONCLUSIVE" -> RiskInconclusive
-        else -> RiskInconclusive
-    }
+    val riskColor = if (failed) RiskInconclusive else riskAccent(result.risk)
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -946,8 +1065,10 @@ private fun AnalysisScreen(
                 }
                 LottieIcon(animation, "${result.risk} screening verdict", size = 64.dp, tint = riskColor, repeat = normalizedRisk == "…")
                 Column {
-                    Text("Screening Results", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("Model: ${result.model}", color = TextSecondary, fontSize = 11.sp)
+                    Text(if (normalizedRisk == "…") "Reviewing your submission" else "Analysis report", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    if (!failed && normalizedRisk != "…" && result.model.isNotBlank() && result.model != "unknown") {
+                        Text("Model · ${result.model}", color = TextSecondary, fontSize = 11.sp, fontFamily = EvidenceMono)
+                    }
                 }
             }
         }
@@ -960,7 +1081,13 @@ private fun AnalysisScreen(
                     .fillMaxWidth()
                     .border(1.5.dp, riskColor.copy(alpha = 0.6f), RoundedCornerShape(Corner.large))
             ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Brush.linearGradient(listOf(riskColor.copy(alpha = 0.10f), NeuralCard, NeuralCard)))
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Row(
                         Modifier.graphicsLayer { scaleX = stampScale; scaleY = stampScale; rotationZ = stampAngle }
                             .border(1.dp, riskColor, RoundedCornerShape(Corner.stamp))
@@ -976,10 +1103,25 @@ private fun AnalysisScreen(
                             else -> Icons.Outlined.HelpOutline
                         }
                         Icon(verdictIcon, "${result.risk} verdict", tint = riskColor, modifier = Modifier.size(18.dp))
-                        Text(result.risk.uppercase(), color = riskColor, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.sp)
+                        Text(if (failed) "NOT COMPLETED" else result.risk.uppercase(), color = riskColor, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.sp)
                     }
                     Text(result.category, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Text(result.disclaimer, color = TextSecondary, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+        }
+
+        if (failed) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = NeuralBgSecondary),
+                    shape = RoundedCornerShape(Corner.medium),
+                    modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(Corner.medium)),
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("ANALYSIS NOT COMPLETED", color = RiskInconclusive, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Text(result.indicators.firstOrNull() ?: "The service did not return an analysis. You can edit the message and try again.", color = TextPrimary, fontSize = 13.sp, lineHeight = 19.sp)
+                    }
                 }
             }
         }
@@ -997,10 +1139,18 @@ private fun AnalysisScreen(
 
         if (!failed) {
             item { Text("DETECTED INDICATORS", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp) }
-            items(result.indicators) { SignalRow(it) }
+            if (result.indicators.isEmpty()) {
+                item { Text("No indicators were returned. That is not proof the content is legitimate.", color = TextSecondary, fontSize = 12.sp, lineHeight = 18.sp) }
+            } else {
+                items(result.indicators) { SignalRow(it) }
+            }
 
             item { Text("RECOMMENDED ACTIONS", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp) }
-            items(result.advice) { AdviceRow(it) }
+            if (result.advice.isEmpty()) {
+                item { Text("No recommended actions were returned.", color = TextSecondary, fontSize = 12.sp, lineHeight = 18.sp) }
+            } else {
+                items(result.advice) { AdviceRow(it) }
+            }
 
             if (result.crossCheckSummary.isNotBlank()) {
                 item {
@@ -1027,7 +1177,7 @@ private fun AnalysisScreen(
                             .fillMaxWidth()
                             .height(50.dp),
                         shape = RoundedCornerShape(Corner.small),
-                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Palette.textOnSignal)
                     ) {
                         Text("Prepare Report Summary", fontWeight = FontWeight.Bold)
                     }
@@ -1042,11 +1192,11 @@ private fun AnalysisScreen(
                     ) {
                         Icon(Icons.Outlined.BookmarkBorder, "Save analysis", tint = CyanAccent, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Save Private Record", fontWeight = FontWeight.Bold)
+                        Text("Prepare session reference", fontWeight = FontWeight.Bold)
                     }
                 }
                 TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                    Text("Analyze Another Message", color = TextSecondary, fontSize = 13.sp)
+                    Text(if (failed) "Edit and try again" else "Analyze another message", color = TextSecondary, fontSize = 13.sp)
                 }
             }
         }
@@ -1078,7 +1228,6 @@ private fun ChatScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(NeuralBg)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1173,7 +1322,7 @@ private fun ChatScreen(
                 Text("Search Official Web", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text("Query SerpApi for current sources", color = TextSecondary, fontSize = 10.sp)
             }
-            Switch(checked = webSearch, onCheckedChange = onWebSearchChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
+            Switch(checked = webSearch, onCheckedChange = onWebSearchChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = Palette.textOnSignal, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
         }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1181,7 +1330,7 @@ private fun ChatScreen(
                 value = input,
                 onValueChange = onInputChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask anything…", color = TextSecondary) },
+                placeholder = { Text("Ask about scams or online safety…", color = TextSecondary) },
                 colors = neuralTextFieldColors(),
                 shape = RoundedCornerShape(Corner.large),
                 maxLines = 3
@@ -1192,7 +1341,7 @@ private fun ChatScreen(
                 modifier = Modifier.size(48.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = CyanAccent, disabledContainerColor = NeuralCard)
             ) {
-                Icon(Icons.Outlined.Send, contentDescription = "Send", tint = NeuralBg)
+                Icon(Icons.Outlined.Send, contentDescription = "Send", tint = Palette.textOnSignal)
             }
         }
     }
@@ -1250,7 +1399,7 @@ private data class LearnTopic(val title: String, val desc: String, val icon: Ima
 // ACTIVITY LOG / HISTORY SCREEN
 // -------------------------------------------------------------------------
 @Composable
-private fun ActivityScreen(incidents: List<IncidentRecord>, lastMessage: String?) {
+private fun ActivityScreen(incidents: List<IncidentRecord>, lastMessage: String?, lastMessageIsError: Boolean) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -1258,8 +1407,27 @@ private fun ActivityScreen(incidents: List<IncidentRecord>, lastMessage: String?
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Saved Records", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                Text("Private analysis history saved locally on this device.", color = TextSecondary, fontSize = 13.sp)
+                Text("Activity", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Text("Session references only; the service does not store reports.", color = TextSecondary, fontSize = 13.sp)
+            }
+        }
+
+        if (lastMessage != null) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(Corner.medium))
+                        .background((if (lastMessageIsError) DangerRed else SuccessGreen).copy(alpha = 0.12f))
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        if (lastMessageIsError) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        tint = if (lastMessageIsError) DangerRed else SuccessGreen,
+                    )
+                    Text(lastMessage, color = TextPrimary, fontSize = 12.sp, lineHeight = 17.sp)
+                }
             }
         }
 
@@ -1280,8 +1448,8 @@ private fun ActivityScreen(incidents: List<IncidentRecord>, lastMessage: String?
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         LottieIcon(R.raw.empty, "No saved records", size = 56.dp, tint = Palette.signal)
-                        Text("No Saved Records Yet", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text("Saved screening notes will appear here.", color = TextSecondary, fontSize = 12.sp)
+                        Text("No activity yet", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("When you prepare a report reference, it will appear here for this session.", color = TextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
                     }
                 }
             }
@@ -1344,11 +1512,29 @@ private fun PrivacyScreen(
         }
 
         item {
-            PrivacySetting("Mask Personal Data", "Hide phone numbers and emails before AI analysis.", maskPii, onMaskChange)
+            PrivacySetting("Mask personal data", "Mask emails and long numbers on device before analysis.", maskPii, onMaskChange)
             Spacer(Modifier.height(10.dp))
             PrivacySetting("Floating Shortcut", "Display shortcut overlay button over other apps.", overlayEnabled, onOverlayChange)
             Spacer(Modifier.height(10.dp))
-            PrivacySetting("Dark Forensic Noir", "Use the default ink moss appearance. Turn off for warm paper.", darkTheme, onDarkThemeChange)
+            PrivacySetting("Nightwatch dark appearance", "Choose deep navy or the cool daylight palette.", darkTheme, onDarkThemeChange)
+        }
+
+        item {
+            Card(
+                onClick = onSetup,
+                colors = CardDefaults.cardColors(containerColor = Palette.elevated),
+                shape = RoundedCornerShape(Corner.large),
+                modifier = Modifier.fillMaxWidth().border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large)),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Outlined.SettingsSuggest, contentDescription = null, tint = VioletAccent)
+                    Column(Modifier.weight(1f)) {
+                        Text("Android permissions", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Review shortcut and one-time capture setup.", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Icon(Icons.Outlined.ChevronRight, contentDescription = "Open setup", tint = TextSecondary)
+                }
+            }
         }
 
         item {
@@ -1361,9 +1547,14 @@ private fun PrivacyScreen(
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Accessibility Service", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("Optional permission to assist reading onscreen text on explicit command.", color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
+                    Text(
+                        if (accessibilityEnabled) "Enabled in Android, but this build does not read or collect onscreen text." else "This build does not read or collect onscreen text. The Android service is a scaffold only.",
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                    )
                     OutlinedButton(onClick = onAccessibilitySettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(Corner.small)) {
-                        Text(if (accessibilityEnabled) "Review Android Settings" else "Open Android Accessibility Settings", color = CyanAccent, fontSize = 12.sp)
+                        Text("Review Android accessibility settings", color = CyanAccent, fontSize = 12.sp)
                     }
                 }
             }
@@ -1388,17 +1579,23 @@ private fun SetupScreen(
         }
         item { SetupCard("01", "Floating Shortcut", "Shows quick-access bubble over other apps.", if (overlayEnabled) "Enabled" else "Allow Overlay", overlayEnabled, onEnableOverlay) }
         item { SetupCard("02", "Screen Capture", "Requires Android consent prompt before every screenshot.", "Capture with Consent", false, onCapture) }
-        item { SetupCard("03", "Accessibility Assist", "Optional accessibility text reader.", if (accessibilityEnabled) "Enabled in Settings" else "Review Settings", accessibilityEnabled, onAccessibilitySettings) }
+        item { SetupCard("03", "Accessibility scaffold", "Does not read or monitor screen text in this build.", "Review Android Settings", accessibilityEnabled, onAccessibilitySettings) }
     }
 }
 
 @Composable
-private fun CapturePreviewScreen(preview: ByteArray?, piiMasking: Boolean, onAnalyze: () -> Unit, onDiscard: () -> Unit) {
+private fun CapturePreviewScreen(
+    preview: ByteArray?,
+    piiMasking: Boolean,
+    onAnalyze: () -> Unit,
+    onRetake: () -> Unit,
+    onDiscard: () -> Unit,
+) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Review Captured Screen", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("Image remains strictly local until analyzed.", color = TextSecondary, fontSize = 12.sp)
+                Text("Is this the screen you want to check?", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("Nothing is sent until you choose Use screenshot. Screenshot pixels are sent as-is; text masking does not cover images.", color = TextSecondary, fontSize = 12.sp, lineHeight = 17.sp)
                 if (preview != null) LottieIcon(R.raw.success, "Screen capture ready for review", size = 44.dp, tint = Palette.safe)
             }
         }
@@ -1410,8 +1607,16 @@ private fun CapturePreviewScreen(preview: ByteArray?, piiMasking: Boolean, onAna
             }
         }
         item {
-            Button(onClick = onAnalyze, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(Corner.small), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)) {
-                Text("Analyze Screen", fontWeight = FontWeight.Bold)
+            Button(onClick = onAnalyze, enabled = preview != null, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(Corner.small), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Palette.textOnSignal)) {
+                Text("Use screenshot and analyze", fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onRetake, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(Corner.small)) {
+                Text("Retake screenshot", color = TextSecondary)
+            }
+            Spacer(Modifier.height(4.dp))
+            OutlinedButton(onClick = onDiscard, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(Corner.small)) {
+                Text("Discard screenshot", color = TextSecondary)
             }
         }
     }
@@ -1442,7 +1647,7 @@ private fun ReportScreen(summary: String, onSummaryChange: (String) -> Unit, onO
             OutlinedTextField(value = summary, onValueChange = onSummaryChange, modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp), colors = neuralTextFieldColors(), shape = RoundedCornerShape(Corner.medium), textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = EvidenceMono))
         }
         item {
-            Button(onClick = { clipboard.setText(AnnotatedString(summary)) }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(Corner.small), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = NeuralBg)) {
+            Button(onClick = { clipboard.setText(AnnotatedString(summary)) }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(Corner.small), colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Palette.textOnSignal)) {
                 Text("Copy Summary", fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(8.dp))
@@ -1457,25 +1662,60 @@ private fun ReportScreen(summary: String, onSummaryChange: (String) -> Unit, onO
 // HELPER COMPONENTS
 // -------------------------------------------------------------------------
 @Composable
+private fun Modifier.nightwatchCanvas(): Modifier {
+    val base = NeuralBg
+    val cyan = CyanAccent
+    val violet = VioletAccent
+    return background(base).drawBehind {
+        val radius = maxOf(size.width, size.height) * 0.72f
+        drawCircle(
+            Brush.radialGradient(listOf(violet.copy(alpha = 0.12f), Color.Transparent), radius = radius),
+            radius = radius,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.08f),
+        )
+        drawCircle(
+            Brush.radialGradient(listOf(cyan.copy(alpha = 0.05f), Color.Transparent), radius = radius),
+            radius = radius,
+            center = androidx.compose.ui.geometry.Offset(size.width * 0.04f, size.height * 0.92f),
+        )
+    }
+
+}
+
+@Composable
 private fun BrandMark(size: Int) {
-    Box(Modifier.size(size.dp).clip(RoundedCornerShape(size.dp * 0.28f)).background(CyanAccent), contentAlignment = Alignment.Center) {
-        Icon(painterResource(R.drawable.trustguard_mark), contentDescription = "TrustGuard verified shield logo", tint = NeuralBg, modifier = Modifier.size((size * 0.7f).dp))
+    Box(
+        Modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape(size.dp * 0.28f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.trustguard_logo),
+            contentDescription = "TrustGuard Logo",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        )
     }
 }
 
 @Composable
 private fun RowScope.RootTab(label: String, icon: ImageVector, selected: Boolean, modifier: Modifier = Modifier, action: () -> Unit) {
+    val indicator by animateFloatAsState(if (selected) 1f else 0f, animationSpec = tween(Motion.standard), label = "tab-indicator")
     Column(
         modifier
-            .clip(RoundedCornerShape(Corner.small))
-            .clickable(onClick = action)
-            .heightIn(min = 48.dp)
+            .padding(horizontal = 2.dp)
+            .clip(RoundedCornerShape(Corner.medium))
+            .background(if (selected) Palette.signalMuted else Color.Transparent)
+            .selectable(selected = selected, onClick = action, role = Role.Tab)
+            .heightIn(min = 52.dp)
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Icon(icon, contentDescription = label, tint = if (selected) CyanAccent else TextSecondary, modifier = Modifier.size(20.dp))
-        Text(label, color = if (selected) CyanAccent else TextSecondary, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+        Icon(icon, contentDescription = null, tint = if (selected) CyanAccent else TextSecondary, modifier = Modifier.size(19.dp))
+        Text(label, color = if (selected) CyanAccent else TextSecondary, fontSize = 9.sp, maxLines = 1, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+        Spacer(Modifier.width((8 * indicator).dp).height(2.dp).clip(CircleShape).background(CyanAccent))
     }
 }
 
@@ -1488,7 +1728,7 @@ private fun PrivacySetting(title: String, subtitle: String, checked: Boolean, on
                 Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(subtitle, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
             }
-            Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = NeuralBg, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
+            Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = CyanAccent, checkedThumbColor = Palette.textOnSignal, uncheckedTrackColor = NeuralCard, uncheckedThumbColor = TextSecondary, uncheckedBorderColor = NeuralOutline))
         }
     }
 }
@@ -1497,10 +1737,15 @@ private fun PrivacySetting(title: String, subtitle: String, checked: Boolean, on
 private fun SetupCard(number: String, title: String, body: String, actionLabel: String, enabled: Boolean, action: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = NeuralCard), shape = RoundedCornerShape(Corner.large), modifier = Modifier.border(1.dp, NeuralOutline, RoundedCornerShape(Corner.large))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("$number. $title", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("$number. $title", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                if (enabled) {
+                    Icon(Icons.Outlined.CheckCircle, contentDescription = "Enabled", tint = SuccessGreen, modifier = Modifier.size(18.dp))
+                }
+            }
             Text(body, color = TextSecondary, fontSize = 11.sp)
             OutlinedButton(onClick = action, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(Corner.small)) {
-                Text(actionLabel, color = CyanAccent, fontSize = 12.sp)
+                Text(actionLabel, color = if (enabled) TextSecondary else CyanAccent, fontSize = 12.sp)
             }
         }
     }
@@ -1544,9 +1789,17 @@ private fun IncidentCard(id: String, category: String, risk: String, status: Str
                 Text(category, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text("$id · $status", color = TextSecondary, fontSize = 10.sp)
             }
-            Text(risk.uppercase(), color = if (risk.equals("High", true)) DangerRed else CyanAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            Text(risk.uppercase(), color = riskAccent(risk), fontWeight = FontWeight.Bold, fontSize = 10.sp)
         }
     }
+}
+
+@Composable
+private fun riskAccent(risk: String): Color = when {
+    risk.contains("HIGH", ignoreCase = true) -> DangerRed
+    risk.contains("SUSPICIOUS", ignoreCase = true) || risk.contains("MEDIUM", ignoreCase = true) -> WarningAmber
+    risk.contains("LOW", ignoreCase = true) || risk.contains("SAFE", ignoreCase = true) -> SuccessGreen
+    else -> RiskInconclusive
 }
 
 @Composable
@@ -1565,10 +1818,10 @@ private fun maskPersonalData(input: String): String = input
     .replace(Regex("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"), "[EMAIL]")
     .replace(Regex("(?<!\\d)(?:\\+?\\d[ -]?){9,15}(?!\\d)"), "[PHONE OR NUMBER]")
 
-@Preview(name = "Forensic Noir · dark", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+@Preview(name = "Nightwatch Signal · dark", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
 annotation class ForensicDarkPreview
 
-@Preview(name = "Warm Paper · light", uiMode = Configuration.UI_MODE_NIGHT_NO, showBackground = true)
+@Preview(name = "Daylight · light", uiMode = Configuration.UI_MODE_NIGHT_NO, showBackground = true)
 annotation class WarmPaperPreview
 
 @Composable
@@ -1579,15 +1832,15 @@ private fun PreviewTheme(content: @Composable () -> Unit) {
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun SplashScreenPreview() = PreviewTheme { SplashScreen {} }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun OnboardingScreenPreview() = PreviewTheme { OnboardingScreen {} }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun LoginScreenPreview() = PreviewTheme { LoginScreen(null) {} }
-@ForensicDarkPreview @WarmPaperPreview @Composable private fun HomeScreenPreview() = PreviewTheme { HomeScreen(false, {}, {}, {}, {}, {}, null, "Asha") }
-@ForensicDarkPreview @WarmPaperPreview @Composable private fun ScanScreenPreview() = PreviewTheme { ScanScreen("", {}, {}, {}, {}, false, {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun HomeScreenPreview() = PreviewTheme { HomeScreen(false, {}, {}, {}, {}, {}, {}, null, "") }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun ScanScreenPreview() = PreviewTheme { ScanScreen("", {}, {}, {}, false, {}, true) }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun AnalysisScreenPreview() = PreviewTheme {
     AnalysisScreen("Example message", AnalysisResponse("SUSPICIOUS", "Payment request", listOf("Urgent payment language"), listOf("Verify with the sender through a known number.")), {}, {}, {})
 }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun ChatScreenPreview() = PreviewTheme { ChatScreen(emptyList(), "", {}, false, null, false, {}, {}, {}, {}) }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun LearnScreenPreview() = PreviewTheme { LearnScreen() }
-@ForensicDarkPreview @WarmPaperPreview @Composable private fun ActivityScreenPreview() = PreviewTheme { ActivityScreen(emptyList(), null) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun ActivityScreenPreview() = PreviewTheme { ActivityScreen(emptyList(), null, false) }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun PrivacyScreenPreview() = PreviewTheme { PrivacyScreen("asha@example.in", true, {}, false, {}, {}, {}, false, {}, isSystemInDarkTheme(), {}) }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun SetupScreenPreview() = PreviewTheme { SetupScreen(false, {}, {}, false, {}) }
-@ForensicDarkPreview @WarmPaperPreview @Composable private fun CapturePreviewScreenPreview() = PreviewTheme { CapturePreviewScreen(null, true, {}, {}) }
+@ForensicDarkPreview @WarmPaperPreview @Composable private fun CapturePreviewScreenPreview() = PreviewTheme { CapturePreviewScreen(null, true, {}, {}, {}) }
 @ForensicDarkPreview @WarmPaperPreview @Composable private fun ReportScreenPreview() = PreviewTheme { ReportScreen("TrustGuard analysis notes", {}, {}) }
